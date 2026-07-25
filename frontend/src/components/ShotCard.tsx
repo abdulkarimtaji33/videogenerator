@@ -4,29 +4,18 @@ import { useState } from "react";
 import type { Shot } from "@/types";
 import { imageUrl, generateShotVideo, regenerateShotImage, ApiError } from "@/lib/api";
 import StatusBadge from "./StatusBadge";
+import CopyableBlock from "./CopyableBlock";
 
 const BUSY_STATUSES = new Set(["image_prompt", "image", "video"]);
 
 export default function ShotCard({ projectId, shot }: { projectId: number; shot: Shot }) {
-  const [detailsOpen, setDetailsOpen] = useState(shot.status !== "done");
-  const [copied, setCopied] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [videoActionError, setVideoActionError] = useState<string | null>(null);
   const [imageActionError, setImageActionError] = useState<string | null>(null);
   const [videoStarting, setVideoStarting] = useState(false);
   const [imageStarting, setImageStarting] = useState(false);
 
   const isBusy = BUSY_STATUSES.has(shot.status) || videoStarting || imageStarting;
-
-  async function copyPrompt() {
-    if (!shot.video_prompt) return;
-    try {
-      await navigator.clipboard.writeText(shot.video_prompt);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard API can be unavailable (e.g. insecure context); fail silently, the prompt text is still visible.
-    }
-  }
 
   async function handleGenerateVideo() {
     setVideoActionError(null);
@@ -55,34 +44,44 @@ export default function ShotCard({ projectId, shot }: { projectId: number; shot:
   const canRegenerateImage = Boolean(shot.image_prompt) && !isBusy;
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-card">
-      {shot.video_path ? (
-        <video
-          className="aspect-square w-full bg-surface-muted object-cover"
-          src={imageUrl(shot.video_path)}
-          poster={shot.image_path ? imageUrl(shot.image_path) : undefined}
-          controls
-          loop
-        />
-      ) : shot.image_path ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          className="aspect-square w-full bg-surface-muted object-cover"
-          src={imageUrl(shot.image_path)}
-          alt={shot.title || `Shot ${shot.shot_number}`}
-        />
-      ) : (
-        <div className="flex aspect-square w-full flex-col items-center justify-center gap-2 bg-surface-muted text-muted-foreground">
-          {shot.status === "error" ? (
-            <span className="text-xs">Image generation failed</span>
-          ) : (
-            <>
-              <span className="spinner" />
-              <span className="text-xs">Generating image...</span>
-            </>
-          )}
-        </div>
-      )}
+    <div className="group overflow-hidden rounded-2xl border border-border bg-surface shadow-card transition-all hover:-translate-y-0.5 hover:shadow-raised">
+      <div className="relative">
+        {shot.video_path ? (
+          <video
+            className="aspect-square w-full bg-surface-muted object-cover"
+            src={imageUrl(shot.video_path)}
+            poster={shot.image_path ? imageUrl(shot.image_path) : undefined}
+            controls
+            loop
+          />
+        ) : shot.image_path ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            className="aspect-square w-full bg-surface-muted object-cover"
+            src={imageUrl(shot.image_path)}
+            alt={shot.title || `Shot ${shot.shot_number}`}
+          />
+        ) : (
+          <div className="flex aspect-square w-full flex-col items-center justify-center gap-2 bg-surface-muted text-muted-foreground">
+            {shot.status === "error" ? (
+              <span className="text-xs">Image generation failed</span>
+            ) : (
+              <>
+                <span className="spinner" />
+                <span className="text-xs">Generating image...</span>
+              </>
+            )}
+          </div>
+        )}
+        <span className="pointer-events-none absolute left-3 top-3 flex h-7 min-w-7 items-center justify-center rounded-md bg-background/80 px-1.5 font-[family-name:var(--font-display)] text-[13px] font-semibold tabular-nums text-foreground shadow-sm backdrop-blur-sm">
+          {String(shot.shot_number).padStart(2, "0")}
+        </span>
+        {shot.duration && (
+          <span className="pointer-events-none absolute bottom-3 right-3 rounded-md bg-background/80 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-foreground shadow-sm backdrop-blur-sm">
+            {shot.duration}
+          </span>
+        )}
+      </div>
 
       <div className="p-4">
         <div className="flex items-center justify-between gap-2">
@@ -92,6 +91,12 @@ export default function ShotCard({ projectId, shot }: { projectId: number; shot:
           <StatusBadge status={shot.status} />
         </div>
 
+        {shot.voiceover && (
+          <p className="mt-2 border-l-2 border-border pl-2.5 text-sm italic leading-relaxed text-muted-foreground">
+            &ldquo;{shot.voiceover}&rdquo;
+          </p>
+        )}
+
         {hasDetails && (
           <button
             type="button"
@@ -99,7 +104,7 @@ export default function ShotCard({ projectId, shot }: { projectId: number; shot:
             aria-expanded={detailsOpen}
             className="mt-3 flex w-full items-center justify-between text-xs font-medium text-muted-foreground transition-colors hover:text-accent"
           >
-            Details
+            {detailsOpen ? "Hide prompts" : "Show prompts"}
             <svg
               width="13"
               height="13"
@@ -116,32 +121,9 @@ export default function ShotCard({ projectId, shot }: { projectId: number; shot:
 
         <div className={`collapsible-content ${detailsOpen ? "open" : ""}`}>
           <div>
-            <div className="space-y-3 pt-3">
-              {shot.voiceover && (
-                <p className="text-sm italic leading-relaxed text-muted-foreground">&ldquo;{shot.voiceover}&rdquo;</p>
-              )}
-
-              {shot.image_prompt && (
-                <div>
-                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Image prompt
-                  </p>
-                  <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-                    {shot.image_prompt}
-                  </div>
-                </div>
-              )}
-
-              {shot.video_prompt && (
-                <div>
-                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Video prompt
-                  </p>
-                  <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-                    {shot.video_prompt}
-                  </div>
-                </div>
-              )}
+            <div className="space-y-2.5 pt-3">
+              {shot.image_prompt && <CopyableBlock label="Image prompt" text={shot.image_prompt} />}
+              {shot.video_prompt && <CopyableBlock label="Video prompt" text={shot.video_prompt} />}
 
               {shot.error_message && (
                 <div className="rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-xs text-danger">
@@ -157,7 +139,7 @@ export default function ShotCard({ projectId, shot }: { projectId: number; shot:
             <a href={imageUrl(shot.video_path)} download className="flex-1">
               <button
                 type="button"
-                className="w-full rounded-lg border border-border min-h-[38px] py-2.5 text-xs font-medium transition-all active:scale-[0.97] text-foreground hover:bg-surface-muted"
+                className="w-full min-h-[38px] rounded-lg border border-border py-2.5 text-xs font-medium text-foreground transition-all hover:bg-surface-muted active:scale-[0.97]"
               >
                 Download video
               </button>
@@ -167,21 +149,12 @@ export default function ShotCard({ projectId, shot }: { projectId: number; shot:
               <a href={imageUrl(shot.image_path)} download className="flex-1">
                 <button
                   type="button"
-                  className="w-full rounded-lg border border-border min-h-[38px] py-2.5 text-xs font-medium transition-all active:scale-[0.97] text-foreground hover:bg-surface-muted"
+                  className="w-full min-h-[38px] rounded-lg border border-border py-2.5 text-xs font-medium text-foreground transition-all hover:bg-surface-muted active:scale-[0.97]"
                 >
                   Download
                 </button>
               </a>
             )
-          )}
-          {shot.video_prompt && (
-            <button
-              type="button"
-              onClick={copyPrompt}
-              className="flex-1 rounded-lg bg-accent-soft min-h-[38px] py-2.5 text-xs font-medium transition-all active:scale-[0.97] text-accent hover:opacity-80"
-            >
-              {copied ? "Copied!" : "Copy prompt"}
-            </button>
           )}
 
           {canRegenerateImage && (
@@ -189,7 +162,7 @@ export default function ShotCard({ projectId, shot }: { projectId: number; shot:
               type="button"
               onClick={handleRegenerateImage}
               disabled={imageStarting}
-              className="w-full rounded-lg border border-border min-h-[38px] py-2.5 text-xs font-medium transition-all active:scale-[0.97] text-foreground hover:bg-surface-muted disabled:opacity-60 disabled:active:scale-100"
+              className="flex-1 min-h-[38px] rounded-lg border border-border py-2.5 text-xs font-medium text-foreground transition-all hover:bg-surface-muted active:scale-[0.97] disabled:opacity-60 disabled:active:scale-100"
             >
               {imageStarting ? "Regenerating..." : "Regenerate image"}
             </button>
@@ -200,7 +173,7 @@ export default function ShotCard({ projectId, shot }: { projectId: number; shot:
               type="button"
               onClick={handleGenerateVideo}
               disabled={videoStarting}
-              className="w-full rounded-lg bg-accent-soft min-h-[38px] py-2.5 text-xs font-medium transition-all active:scale-[0.97] text-accent hover:opacity-80 disabled:opacity-60 disabled:active:scale-100"
+              className="w-full min-h-[38px] rounded-lg bg-accent py-2.5 text-xs font-semibold text-accent-foreground transition-all hover:opacity-90 active:scale-[0.97] disabled:opacity-60 disabled:active:scale-100"
             >
               {videoStarting ? "Generating video..." : "Generate video"}
             </button>

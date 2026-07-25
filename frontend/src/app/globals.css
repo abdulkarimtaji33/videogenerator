@@ -3,35 +3,52 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --background: #f6f6f9;
-  --foreground: #17181c;
-  --surface: #ffffff;
-  --surface-muted: #eef0f5;
-  --border: #dfe1e8;
-  --muted-foreground: #63656f;
-  --accent: #4c56e0;
-  --accent-foreground: #ffffff;
-  --accent-soft: #e6e7fb;
-  --success: #1c7a41;
-  --success-soft: #dff3e5;
-  --danger: #b3261e;
-  --danger-soft: #fbe2e0;
+  /* Primitives — warm neutral scale + a single cinematic accent (slate-orange), generated in OKLCH */
+  --ink-25: oklch(99% 0.003 80);
+  --ink-50: oklch(97.5% 0.004 80);
+  --ink-100: oklch(94.5% 0.006 80);
+  --ink-200: oklch(89% 0.007 80);
+  --ink-400: oklch(62% 0.012 80);
+  --ink-600: oklch(38% 0.01 80);
+  --ink-900: oklch(19% 0.008 80);
+  --ink-950: oklch(15% 0.006 80);
+
+  --flame-500: oklch(65% 0.19 42);
+  --flame-600: oklch(58% 0.19 40);
+
+  --moss-500: oklch(58% 0.13 155);
+  --rose-500: oklch(56% 0.2 25);
+
+  /* Semantic — light mode */
+  --background: var(--ink-50);
+  --foreground: var(--ink-950);
+  --surface: var(--ink-25);
+  --surface-muted: var(--ink-100);
+  --border: var(--ink-200);
+  --muted-foreground: var(--ink-600);
+  --accent: var(--flame-600);
+  --accent-foreground: oklch(99% 0 0);
+  --accent-soft: oklch(93% 0.045 42);
+  --success: oklch(42% 0.11 155);
+  --success-soft: oklch(93% 0.05 155);
+  --danger: oklch(45% 0.19 25);
+  --danger-soft: oklch(94% 0.05 25);
 }
 
 .dark {
-  --background: #0f1115;
-  --foreground: #e8e8ec;
-  --surface: #1a1c23;
-  --surface-muted: #22242c;
-  --border: #2c2f3a;
-  --muted-foreground: #9a9aa5;
-  --accent: #5b6cff;
-  --accent-foreground: #ffffff;
-  --accent-soft: #262a4a;
-  --success: #7de8a1;
-  --success-soft: #16321f;
-  --danger: #ffb3b3;
-  --danger-soft: #3a1c1c;
+  --background: var(--ink-950);
+  --foreground: var(--ink-50);
+  --surface: oklch(19% 0.007 80);
+  --surface-muted: oklch(24% 0.008 80);
+  --border: oklch(29% 0.009 80);
+  --muted-foreground: oklch(68% 0.012 80);
+  --accent: oklch(73% 0.15 42);
+  --accent-foreground: oklch(15% 0.01 42);
+  --accent-soft: oklch(30% 0.06 42);
+  --success: oklch(78% 0.13 155);
+  --success-soft: oklch(27% 0.05 155);
+  --danger: oklch(78% 0.14 25);
+  --danger-soft: oklch(30% 0.07 25);
 }
 
 @theme inline {
@@ -49,15 +66,17 @@
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-display: var(--font-display-family), var(--font-sans);
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
 
   /* One shadow scale, used everywhere a surface needs to read as "raised" — never a raw box-shadow value inline. */
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.04), 0 4px 12px rgb(0 0 0 / 0.05);
-  --shadow-raised: 0 2px 4px rgb(0 0 0 / 0.06), 0 12px 24px rgb(0 0 0 / 0.08);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.04), 0 6px 16px rgb(0 0 0 / 0.05);
+  --shadow-raised: 0 4px 8px rgb(0 0 0 / 0.06), 0 16px 32px rgb(0 0 0 / 0.09);
 }
 
 .dark {
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 16px rgb(0 0 0 / 0.35);
-  --shadow-raised: 0 2px 6px rgb(0 0 0 / 0.35), 0 16px 32px rgb(0 0 0 / 0.4);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.35), 0 6px 20px rgb(0 0 0 / 0.4);
+  --shadow-raised: 0 4px 10px rgb(0 0 0 / 0.4), 0 20px 40px rgb(0 0 0 / 0.45);
 }
 
 * {
@@ -70,6 +89,13 @@ body {
   color: var(--color-foreground);
   font-family: var(--font-sans);
   transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+/* Faint fixed grain/vignette on the canvas — cheap way to make a flat dark background feel like a
+   crafted surface instead of a default #0f0f0f div. Purely decorative, ignored by assistive tech. */
+.bg-canvas-texture {
+  background-image: radial-gradient(circle at 12% -10%, color-mix(in oklch, var(--accent) 10%, transparent), transparent 55%);
+  background-repeat: no-repeat;
 }
 
 @keyframes spin {
@@ -104,6 +130,21 @@ body {
   border-radius: var(--radius, 0.75rem);
 }
 
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.35s var(--ease-standard, cubic-bezier(0.2, 0, 0, 1)) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .spinner {
     animation-duration: 2s;
@@ -111,6 +152,9 @@ body {
   .skeleton {
     animation: none;
     background: var(--color-surface-muted);
+  }
+  .animate-fade-up {
+    animation: none;
   }
   * {
     transition-duration: 0.01ms !important;
@@ -146,4 +190,9 @@ input[type="number"]::-webkit-outer-spin-button {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
   border-radius: 4px;
+}
+
+::selection {
+  background: var(--color-accent);
+  color: var(--color-accent-foreground);
 }

@@ -1,9 +1,15 @@
 import type { ShotStatus } from "@/types";
 
-const STYLES: Record<string, string> = {
-  done: "bg-success-soft text-success",
-  error: "bg-danger-soft text-danger",
-  default: "bg-surface-muted text-muted-foreground",
+const DOT_STYLES: Record<string, string> = {
+  done: "bg-success",
+  error: "bg-danger",
+  default: "bg-muted-foreground",
+};
+
+const TEXT_STYLES: Record<string, string> = {
+  done: "text-success",
+  error: "text-danger",
+  default: "text-muted-foreground",
 };
 
 const LABELS: Record<ShotStatus, string> = {
@@ -20,11 +26,15 @@ export default function StatusBadge({ status }: { status: ShotStatus }) {
   const isBusy = status !== "done" && status !== "error" && status !== "pending";
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${
-        STYLES[status] ?? STYLES.default
+      className={`inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide ${
+        TEXT_STYLES[status] ?? TEXT_STYLES.default
       }`}
     >
-      {isBusy && <span className="spinner" />}
+      {isBusy ? (
+        <span className="spinner" />
+      ) : (
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${DOT_STYLES[status] ?? DOT_STYLES.default}`} />
+      )}
       {LABELS[status] ?? status}
     </span>
   );

@@ -102,7 +102,7 @@ export default function HomePage() {
           Idea to shot list, automatically
         </span>
         <h1
-          className="font-bold tracking-tight text-foreground"
+          className="font-[family-name:var(--font-display)] font-semibold tracking-tight text-foreground"
           style={{ fontSize: "clamp(2rem, 1.4rem + 3vw, 3.25rem)", lineHeight: 1.1 }}
         >
           Turn one idea into a <span className="text-accent">shot-ready</span> story

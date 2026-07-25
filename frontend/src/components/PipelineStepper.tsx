@@ -21,54 +21,42 @@ export default function PipelineStepper({ project }: { project: ProjectWithShots
   const isError = project.status === "error";
   const statusIndex = STEPS.findIndex((s) => s.key === project.status);
   const currentIndex = isError ? reachedIndexOnError(project) : Math.max(statusIndex, 0);
+  const fillPercent = (currentIndex / (STEPS.length - 1)) * 100;
 
   return (
-    <ol className="flex items-center overflow-x-auto pb-1">
+    <ol className="relative flex items-start justify-between">
+      <div className="absolute left-0 right-0 top-[7px] h-px bg-border" aria-hidden="true" />
+      <div
+        className={`absolute left-0 top-[7px] h-px transition-[width] duration-500 ease-out ${isError ? "bg-danger" : "bg-accent"}`}
+        style={{ width: `${fillPercent}%` }}
+        aria-hidden="true"
+      />
       {STEPS.map((step, i) => {
         const active = i === currentIndex;
         const errored = isError && active;
         const done = i < currentIndex;
         return (
-          <li key={step.key} className="flex items-center last:flex-none" aria-current={active ? "step" : undefined}>
-            <div className="flex flex-col items-center gap-1.5">
-              <div
-                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold transition-colors ${
-                  errored
-                    ? "bg-danger-soft text-danger ring-2 ring-danger"
-                    : done
-                      ? "bg-accent text-accent-foreground"
-                      : active
-                        ? "bg-accent-soft text-accent ring-2 ring-accent"
-                        : "bg-surface-muted text-muted-foreground"
-                }`}
-              >
-                {errored ? (
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true">
-                    <path d="M6 6l12 12M18 6L6 18" />
-                  </svg>
-                ) : done ? (
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true">
-                    <path d="M20 6L9 17l-5-5" />
-                  </svg>
-                ) : (
-                  i + 1
-                )}
-              </div>
-              <span
-                className={`whitespace-nowrap text-[11px] font-medium ${
-                  errored ? "text-danger" : active ? "text-accent" : done ? "text-foreground" : "text-muted-foreground"
-                }`}
-              >
-                {step.label}
-              </span>
-            </div>
-            {i < STEPS.length - 1 && (
-              <div
-                className={`mx-1.5 h-0.5 w-8 shrink-0 rounded-full transition-colors sm:w-14 ${
-                  done ? "bg-accent" : "bg-surface-muted"
-                }`}
-              />
-            )}
+          <li
+            key={step.key}
+            className="relative flex flex-1 flex-col items-center gap-2 first:items-start last:items-end"
+            aria-current={active ? "step" : undefined}
+          >
+            <span
+              className={`relative z-[1] block h-3.5 w-3.5 shrink-0 rounded-full ring-4 ring-background transition-colors ${
+                errored ? "bg-danger" : done ? "bg-accent" : active ? "bg-accent" : "bg-border"
+              }`}
+            >
+              {active && !errored && (
+                <span className="absolute inset-0 -m-1 animate-ping rounded-full bg-accent/40" aria-hidden="true" />
+              )}
+            </span>
+            <span
+              className={`whitespace-nowrap text-[11px] font-medium tracking-wide ${
+                errored ? "text-danger" : active ? "text-foreground" : done ? "text-muted-foreground" : "text-muted-foreground/70"
+              }`}
+            >
+              {step.label}
+            </span>
           </li>
         );
       })}
