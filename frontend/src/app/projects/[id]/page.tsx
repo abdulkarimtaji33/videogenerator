@@ -12,6 +12,22 @@ import ShotCard from "@/components/ShotCard";
 
 const TERMINAL_STATUSES = new Set(["done", "error"]);
 const SHOT_BUSY_STATUSES = new Set(["image_prompt", "image", "video"]);
+const STEP_ORDER = ["pending", "story", "character", "scenes", "shots", "done"];
+
+/** Rough overall completion, for a slim progress bar — blends pipeline stage with per-shot progress once shots exist. */
+function computeProgressPercent(project: ProjectWithShots): number {
+  if (project.status === "done") return 100;
+  const idx = STEP_ORDER.indexOf(project.status);
+  if (idx === -1) return 0;
+  const stepFraction = idx / (STEP_ORDER.length - 1);
+  if (project.shots.length > 0) {
+    const shotsFraction = project.shots.filter((s) => s.status === "done").length / project.shots.length;
+    const shotsStepFraction = STEP_ORDER.indexOf("shots") / (STEP_ORDER.length - 1);
+    const doneStepFraction = STEP_ORDER.indexOf("done") / (STEP_ORDER.length - 1);
+    return Math.round((shotsStepFraction + (doneStepFraction - shotsStepFraction) * shotsFraction) * 100);
+  }
+  return Math.round(stepFraction * 100);
+}
 
 function statusLabel(status: string): string {
   switch (status) {
@@ -122,7 +138,7 @@ export default function ProjectPage() {
         <p className="mt-2 text-muted-foreground">This project doesn&apos;t exist, or the backend database was reset.</p>
         <Link
           href="/"
-          className="mt-6 inline-flex h-11 items-center rounded-xl bg-accent px-5 text-[15px] font-semibold text-accent-foreground transition-opacity hover:opacity-90"
+          className="mt-6 inline-flex h-11 items-center rounded-xl bg-accent px-5 text-[15px] font-semibold text-accent-foreground shadow-card transition-all hover:opacity-90 active:scale-[0.98]"
         >
           Start a new project
         </Link>
@@ -144,7 +160,9 @@ export default function ProjectPage() {
   }
 
   const isRunning = !TERMINAL_STATUSES.has(project.status);
+  const isError = project.status === "error";
   const doneShots = project.shots.filter((s) => s.status === "done").length;
+  const progressPercent = computeProgressPercent(project);
 
   return (
     <main className="mx-auto max-w-5xl px-6 pb-24 pt-10">
@@ -153,20 +171,33 @@ export default function ProjectPage() {
           Project #{project.id}
         </p>
         <h1
-          className="line-clamp-2 text-2xl font-bold text-foreground sm:text-3xl"
+          className="line-clamp-2 text-2xl font-bold leading-tight text-foreground sm:text-3xl"
           title={project.idea_prompt}
         >
           {project.idea_prompt}
         </h1>
       </div>
 
-      <div className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
+      <div className="rounded-2xl border border-border bg-surface p-5 shadow-card">
         <PipelineStepper project={project} />
-        <div className="mt-4 flex items-center gap-2 border-t border-border pt-4 text-sm text-muted-foreground" aria-live="polite">
+        <div
+          className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-surface-muted"
+          role="progressbar"
+          aria-valuenow={progressPercent}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label="Pipeline progress"
+        >
+          <div
+            className={`h-full rounded-full transition-[width] duration-500 ease-out ${isError ? "bg-danger" : "bg-accent"}`}
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
+        <div className="mt-3 flex items-center gap-2 border-t border-border pt-4 text-sm text-muted-foreground" aria-live="polite">
           {isRunning && <span className="spinner" />}
           <span>{statusLabel(project.status)}</span>
           {project.shots.length > 0 && (
-            <span className="ml-auto text-xs">
+            <span className="ml-auto shrink-0 text-xs tabular-nums">
               {doneShots}/{project.shots.length} shots ready
             </span>
           )}
@@ -189,7 +220,7 @@ export default function ProjectPage() {
         <div className="mt-6 space-y-4">
           {project.story_script && (
             <Collapsible title="Story script" defaultOpen={project.status === "story"}>
-              <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+              <div className="max-w-[66ch] whitespace-pre-wrap text-[15px] leading-relaxed text-foreground">
                 {project.story_script}
               </div>
             </Collapsible>
@@ -206,7 +237,7 @@ export default function ProjectPage() {
                     alt="Character reference"
                   />
                 )}
-                <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                <div className="max-w-[66ch] whitespace-pre-wrap text-[15px] leading-relaxed text-foreground">
                   {project.character_description}
                 </div>
               </div>

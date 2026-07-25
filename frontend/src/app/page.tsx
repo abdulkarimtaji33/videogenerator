@@ -13,6 +13,9 @@ const EXAMPLE_IDEAS = [
   "A rescue dog trains to become a search-and-rescue hero after a flood.",
 ];
 
+const IDEA_MAX_LENGTH = 4000;
+const SECONDS_PER_SHOT = 40;
+
 function timeAgo(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
   const minutes = Math.round(diffMs / 60000);
@@ -36,8 +39,7 @@ export default function HomePage() {
     setRecentProjects(getRecentProjects());
   }, []);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function startPipeline() {
     if (submitting) return;
 
     const trimmedIdea = idea.trim();
@@ -63,6 +65,18 @@ export default function HomePage() {
     }
   }
 
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    startPipeline();
+  }
+
+  function handleIdeaKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      startPipeline();
+    }
+  }
+
   function adjustShotCount(delta: number) {
     setShotCount((n) => Math.min(20, Math.max(1, n + delta)));
   }
@@ -78,16 +92,22 @@ export default function HomePage() {
     }
   }
 
+  const estimatedSeconds = shotCount * SECONDS_PER_SHOT;
+  const estimatedMinutes = Math.max(1, Math.round(estimatedSeconds / 60));
+
   return (
-    <main className="mx-auto max-w-3xl px-6 pb-24 pt-16">
+    <main className="mx-auto max-w-3xl px-6 pb-24 pt-12 sm:pt-16">
       <div className="mb-10 text-center">
         <span className="mb-4 inline-block rounded-full bg-accent-soft px-3 py-1 text-xs font-semibold text-accent">
           Idea to shot list, automatically
         </span>
-        <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
+        <h1
+          className="font-bold tracking-tight text-foreground"
+          style={{ fontSize: "clamp(2rem, 1.4rem + 3vw, 3.25rem)", lineHeight: 1.1 }}
+        >
           Turn one idea into a <span className="text-accent">shot-ready</span> story
         </h1>
-        <p className="mx-auto mt-4 max-w-xl text-base text-muted-foreground">
+        <p className="mx-auto mt-4 max-w-xl text-base leading-relaxed text-muted-foreground">
           Describe your video idea. We&apos;ll write the story, design your character, break it into shots, and
           generate images and video prompts for each one.
         </p>
@@ -96,21 +116,29 @@ export default function HomePage() {
       <form
         onSubmit={handleSubmit}
         noValidate
-        className="rounded-3xl border border-border bg-surface p-6 shadow-sm sm:p-8"
+        className="rounded-3xl border border-border bg-surface p-6 shadow-card sm:p-8"
       >
-        <label htmlFor="idea" className="mb-2 block text-sm font-medium text-foreground">
-          Video idea
-        </label>
+        <div className="mb-2 flex items-baseline justify-between">
+          <label htmlFor="idea" className="block text-sm font-medium text-foreground">
+            Video idea
+          </label>
+          <span className="text-xs tabular-nums text-muted-foreground" aria-hidden="true">
+            {idea.length}/{IDEA_MAX_LENGTH}
+          </span>
+        </div>
         <textarea
           id="idea"
           placeholder="e.g. A startup founder overwhelmed by manual work discovers an AI platform that automates everything..."
           value={idea}
           onChange={(e) => setIdea(e.target.value)}
-          maxLength={4000}
-          className="min-h-[140px] w-full resize-y rounded-xl border border-border bg-background px-4 py-3 text-[15px] text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
+          onKeyDown={handleIdeaKeyDown}
+          maxLength={IDEA_MAX_LENGTH}
+          className="min-h-[140px] w-full resize-y rounded-xl border border-border bg-background px-4 py-3 text-base text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
         />
+        <p className="mt-1.5 text-xs text-muted-foreground">Tip: press ⌘/Ctrl + Enter to generate.</p>
 
-        <div className="mt-3 flex flex-wrap gap-2">
+        <p className="mt-4 mb-2 text-xs font-medium text-muted-foreground">Or try an example:</p>
+        <div className="flex flex-wrap gap-2">
           {EXAMPLE_IDEAS.map((example) => (
             <button
               key={example}
@@ -133,8 +161,9 @@ export default function HomePage() {
               <button
                 type="button"
                 onClick={() => adjustShotCount(-1)}
+                disabled={shotCount <= 1}
                 aria-label="Decrease shot count"
-                className="flex h-11 w-11 items-center justify-center text-lg text-muted-foreground transition-colors hover:text-accent"
+                className="flex h-11 w-11 items-center justify-center text-lg text-muted-foreground transition-colors hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
               >
                 −
               </button>
@@ -146,23 +175,28 @@ export default function HomePage() {
                 max={20}
                 value={shotCount}
                 onChange={(e) => handleShotCountChange(e.target.value)}
-                className="w-14 border-x border-border bg-transparent py-2.5 text-center text-[15px] text-foreground focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
+                aria-describedby="shotCountHelp"
+                className="w-14 border-x border-border bg-transparent py-2.5 text-center text-base text-foreground focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
               />
               <button
                 type="button"
                 onClick={() => adjustShotCount(1)}
+                disabled={shotCount >= 20}
                 aria-label="Increase shot count"
-                className="flex h-11 w-11 items-center justify-center text-lg text-muted-foreground transition-colors hover:text-accent"
+                className="flex h-11 w-11 items-center justify-center text-lg text-muted-foreground transition-colors hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
               >
                 +
               </button>
             </div>
+            <p id="shotCountHelp" className="mt-1.5 text-xs text-muted-foreground">
+              ~{estimatedMinutes} min to generate
+            </p>
           </div>
 
           <button
             type="submit"
             disabled={submitting}
-            className="flex h-12 items-center gap-2 rounded-xl bg-accent px-6 text-[15px] font-semibold text-accent-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex h-12 items-center gap-2 rounded-xl bg-accent px-6 text-[15px] font-semibold text-accent-foreground shadow-card transition-all hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100"
           >
             {submitting && <span className="spinner" />}
             {submitting ? "Starting..." : "Generate video shots"}
@@ -186,7 +220,7 @@ export default function HomePage() {
               <li key={p.id}>
                 <Link
                   href={`/projects/${p.id}`}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface px-4 py-3 transition-colors hover:border-accent"
+                  className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface px-4 py-3 transition-all hover:border-accent hover:shadow-card"
                 >
                   <span className="truncate text-sm text-foreground">{p.idea}</span>
                   <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(p.createdAt)}</span>

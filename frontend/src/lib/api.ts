@@ -12,6 +12,22 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * A deploy restarts the backend process for a second or two; a request that lands in that
+ * window gets a connection-level failure (not an HTTP error), so a couple of short retries
+ * absorb that blip instead of surfacing "could not reach the backend" for a transient restart.
+ */
+async function fetchWithRetry(url: string, init: RequestInit, retries = 2, delayMs = 400): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fetch(url, init);
+    } catch (err) {
+      if (attempt >= retries) throw err;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
 async function parseErrorMessage(res: Response): Promise<string> {
   try {
     const data = await res.json();
@@ -25,13 +41,13 @@ async function parseErrorMessage(res: Response): Promise<string> {
 export async function createProject(idea: string, shotCount: number): Promise<{ id: number }> {
   let res: Response;
   try {
-    res = await fetch(`${API_URL}/api/projects`, {
+    res = await fetchWithRetry(`${API_URL}/api/projects`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ idea, shotCount }),
     });
   } catch {
-    throw new ApiError(`Could not reach the backend at ${API_URL}. Is it running?`, 0);
+    throw new ApiError("Couldn't reach the server. Check your connection and try again.", 0);
   }
 
   if (!res.ok) {
@@ -43,9 +59,9 @@ export async function createProject(idea: string, shotCount: number): Promise<{ 
 export async function fetchProject(id: string | number): Promise<ProjectWithShots> {
   let res: Response;
   try {
-    res = await fetch(`${API_URL}/api/projects/${id}`, { cache: "no-store" });
+    res = await fetchWithRetry(`${API_URL}/api/projects/${id}`, { cache: "no-store" });
   } catch {
-    throw new ApiError(`Could not reach the backend at ${API_URL}. Is it running?`, 0);
+    throw new ApiError("Couldn't reach the server. Check your connection and try again.", 0);
   }
 
   if (!res.ok) {
@@ -61,9 +77,9 @@ export function imageUrl(path: string): string {
 export async function generateShotVideo(projectId: number, shotId: number): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`${API_URL}/api/projects/${projectId}/shots/${shotId}/video`, { method: "POST" });
+    res = await fetchWithRetry(`${API_URL}/api/projects/${projectId}/shots/${shotId}/video`, { method: "POST" });
   } catch {
-    throw new ApiError(`Could not reach the backend at ${API_URL}. Is it running?`, 0);
+    throw new ApiError("Couldn't reach the server. Check your connection and try again.", 0);
   }
 
   if (!res.ok) {
@@ -74,9 +90,9 @@ export async function generateShotVideo(projectId: number, shotId: number): Prom
 export async function regenerateShotImage(projectId: number, shotId: number): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`${API_URL}/api/projects/${projectId}/shots/${shotId}/image`, { method: "POST" });
+    res = await fetchWithRetry(`${API_URL}/api/projects/${projectId}/shots/${shotId}/image`, { method: "POST" });
   } catch {
-    throw new ApiError(`Could not reach the backend at ${API_URL}. Is it running?`, 0);
+    throw new ApiError("Couldn't reach the server. Check your connection and try again.", 0);
   }
 
   if (!res.ok) {

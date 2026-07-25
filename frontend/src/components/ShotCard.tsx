@@ -55,7 +55,7 @@ export default function ShotCard({ projectId, shot }: { projectId: number; shot:
   const canRegenerateImage = Boolean(shot.image_prompt) && !isBusy;
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-surface">
+    <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-card">
       {shot.video_path ? (
         <video
           className="aspect-square w-full bg-surface-muted object-cover"
@@ -126,7 +126,7 @@ export default function ShotCard({ projectId, shot }: { projectId: number; shot:
                   <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     Image prompt
                   </p>
-                  <div className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">
+                  <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
                     {shot.image_prompt}
                   </div>
                 </div>
@@ -137,7 +137,7 @@ export default function ShotCard({ projectId, shot }: { projectId: number; shot:
                   <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     Video prompt
                   </p>
-                  <div className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">
+                  <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
                     {shot.video_prompt}
                   </div>
                 </div>
@@ -157,7 +157,7 @@ export default function ShotCard({ projectId, shot }: { projectId: number; shot:
             <a href={imageUrl(shot.video_path)} download className="flex-1">
               <button
                 type="button"
-                className="w-full rounded-lg border border-border min-h-[38px] py-2.5 text-xs font-medium text-foreground transition-colors hover:bg-surface-muted"
+                className="w-full rounded-lg border border-border min-h-[38px] py-2.5 text-xs font-medium transition-all active:scale-[0.97] text-foreground hover:bg-surface-muted"
               >
                 Download video
               </button>
@@ -167,7 +167,7 @@ export default function ShotCard({ projectId, shot }: { projectId: number; shot:
               <a href={imageUrl(shot.image_path)} download className="flex-1">
                 <button
                   type="button"
-                  className="w-full rounded-lg border border-border min-h-[38px] py-2.5 text-xs font-medium text-foreground transition-colors hover:bg-surface-muted"
+                  className="w-full rounded-lg border border-border min-h-[38px] py-2.5 text-xs font-medium transition-all active:scale-[0.97] text-foreground hover:bg-surface-muted"
                 >
                   Download
                 </button>
@@ -178,7 +178,7 @@ export default function ShotCard({ projectId, shot }: { projectId: number; shot:
             <button
               type="button"
               onClick={copyPrompt}
-              className="flex-1 rounded-lg bg-accent-soft min-h-[38px] py-2.5 text-xs font-medium text-accent transition-opacity hover:opacity-80"
+              className="flex-1 rounded-lg bg-accent-soft min-h-[38px] py-2.5 text-xs font-medium transition-all active:scale-[0.97] text-accent hover:opacity-80"
             >
               {copied ? "Copied!" : "Copy prompt"}
             </button>
@@ -189,7 +189,7 @@ export default function ShotCard({ projectId, shot }: { projectId: number; shot:
               type="button"
               onClick={handleRegenerateImage}
               disabled={imageStarting}
-              className="w-full rounded-lg border border-border min-h-[38px] py-2.5 text-xs font-medium text-foreground transition-colors hover:bg-surface-muted disabled:opacity-60"
+              className="w-full rounded-lg border border-border min-h-[38px] py-2.5 text-xs font-medium transition-all active:scale-[0.97] text-foreground hover:bg-surface-muted disabled:opacity-60 disabled:active:scale-100"
             >
               {imageStarting ? "Regenerating..." : "Regenerate image"}
             </button>
@@ -200,7 +200,7 @@ export default function ShotCard({ projectId, shot }: { projectId: number; shot:
               type="button"
               onClick={handleGenerateVideo}
               disabled={videoStarting}
-              className="w-full rounded-lg bg-accent-soft min-h-[38px] py-2.5 text-xs font-medium text-accent transition-opacity hover:opacity-80 disabled:opacity-60"
+              className="w-full rounded-lg bg-accent-soft min-h-[38px] py-2.5 text-xs font-medium transition-all active:scale-[0.97] text-accent hover:opacity-80 disabled:opacity-60 disabled:active:scale-100"
             >
               {videoStarting ? "Generating video..." : "Generate video"}
             </button>

@@ -31,13 +31,39 @@ async function verifyDatabaseConnection() {
   }
 }
 
+/**
+ * Builds the CORS origin check. FRONTEND_ORIGIN can be a comma-separated list, so one backend
+ * can serve a fixed set of known origins (e.g. the deployed domain plus its www variant).
+ *
+ * In non-production, ALSO accept any http://localhost:<port> / http://127.0.0.1:<port> origin —
+ * Next's dev server auto-picks a free port when its default is taken, so pinning dev to one exact
+ * port here would just move this bug rather than fix it. Production stays strict: only the
+ * explicitly configured origin(s) are ever allowed.
+ */
+function buildCorsOriginCheck(): (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => void {
+  const configured = (process.env.FRONTEND_ORIGIN || "http://localhost:3000")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+  const allowAnyLocalhostPort = process.env.NODE_ENV !== "production";
+  const localhostPattern = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+
+  return (origin, callback) => {
+    if (!origin || configured.includes(origin) || (allowAnyLocalhostPort && localhostPattern.test(origin))) {
+      callback(null, true);
+    } else {
+      callback(new Error(`Origin ${origin} is not allowed by CORS`));
+    }
+  };
+}
+
 async function main() {
   validateEnv();
 
   const app = express();
   const PORT = Number(process.env.PORT || 4000);
 
-  app.use(cors({ origin: process.env.FRONTEND_ORIGIN || "http://localhost:3000" }));
+  app.use(cors({ origin: buildCorsOriginCheck() }));
   app.use(express.json({ limit: "1mb" }));
 
   app.get("/health", (_req, res) => res.json({ ok: true }));
