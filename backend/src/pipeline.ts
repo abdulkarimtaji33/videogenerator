@@ -57,6 +57,16 @@ function parseSceneBreakdown(raw: string, expectedCount: number): SceneBreakdown
   });
 }
 
+/**
+ * Logs the full technical error server-side and returns a short, human-readable
+ * message safe to store and show to end users — never the raw exception text,
+ * which may contain third-party response bodies, status codes, or internal detail.
+ */
+function friendlyError(context: string, err: unknown): string {
+  console.error(`${context}:`, err);
+  return `${context}. Please try again.`;
+}
+
 async function markProjectError(projectId: number, message: string) {
   await query("UPDATE projects SET status = 'error', error_message = ? WHERE id = ?", [message, projectId]);
 }
@@ -86,7 +96,7 @@ async function runShot(
     const videoPrompt = await generateText(vpSys, vpUser);
     await query("UPDATE shots SET video_prompt = ?, status = 'done' WHERE id = ?", [videoPrompt, shotId]);
   } catch (err: any) {
-    await markShotError(shotId, err?.message || String(err));
+    await markShotError(shotId, friendlyError(`Shot ${shotNumber} generation failed`, err));
   }
 }
 
@@ -117,7 +127,7 @@ export async function runShotImage(projectId: number, shotId: number): Promise<v
     const videoPrompt = await generateText(vpSys, vpUser);
     await query("UPDATE shots SET video_prompt = ?, status = 'done' WHERE id = ?", [videoPrompt, shotId]);
   } catch (err: any) {
-    await markShotError(shotId, err?.message || String(err));
+    await markShotError(shotId, friendlyError("Image regeneration failed", err));
     throw err;
   }
 }
@@ -137,12 +147,13 @@ export async function runShotVideo(projectId: number, shotId: number): Promise<v
     const videoPath = await saveImage(projectId, `shot-${shot.shot_number}.mp4`, videoBuffer);
     await query("UPDATE shots SET video_path = ?, status = 'done' WHERE id = ?", [videoPath, shotId]);
   } catch (err: any) {
-    await markShotError(shotId, err?.message || String(err));
+    await markShotError(shotId, friendlyError("Video generation failed", err));
     throw err;
   }
 }
 
 export async function runPipeline(projectId: number): Promise<void> {
+  let stage = "Starting the pipeline";
   try {
     const [project] = await query<any[]>("SELECT * FROM projects WHERE id = ?", [projectId]);
     if (!project) throw new Error(`Project ${projectId} not found`);
@@ -151,11 +162,13 @@ export async function runPipeline(projectId: number): Promise<void> {
     const shotCount: number = project.shot_count;
 
     // Step 1: story
+    stage = "Writing the story";
     const { system: storySys, user: storyUser } = storyPrompt(idea);
     const story = await generateText(storySys, storyUser);
     await query("UPDATE projects SET story_script = ?, status = 'story' WHERE id = ?", [story, projectId]);
 
     // Step 2: character design
+    stage = "Designing the character";
     const { system: charSys, user: charUser } = characterPrompt(idea, story);
     const characterDescription = await generateText(charSys, charUser);
     await query("UPDATE projects SET character_description = ?, status = 'character' WHERE id = ?", [
@@ -164,6 +177,7 @@ export async function runPipeline(projectId: number): Promise<void> {
     ]);
 
     // Step 3: character reference image
+    stage = "Generating the character reference image";
     const { system: cipSys, user: cipUser } = characterImagePromptPrompt(characterDescription);
     const characterImagePrompt = await generateText(cipSys, cipUser);
     const characterImageBuffer = await generateImage(characterImagePrompt);
@@ -174,6 +188,7 @@ export async function runPipeline(projectId: number): Promise<void> {
     );
 
     // Step 4: scene breakdown
+    stage = "Planning the scene breakdown";
     const { system: scenesSys, user: scenesUser } = scenesPrompt(idea, story, characterDescription, shotCount);
     const scenesRaw = await generateText(scenesSys, scenesUser);
     const scenes = parseSceneBreakdown(scenesRaw, shotCount);
@@ -193,6 +208,7 @@ export async function runPipeline(projectId: number): Promise<void> {
     await query("UPDATE projects SET status = 'shots' WHERE id = ?", [projectId]);
 
     // Step 5: per-shot image + video prompt, capped concurrency (see SHOT_CONCURRENCY above).
+    stage = "Generating shots";
     const characterImageAbsPath = path.join(STORAGE_ROOT, characterImagePath);
     await mapWithConcurrency(scenes, SHOT_CONCURRENCY, (scene, i) =>
       runShot(projectId, shotIds[i], i + 1, scene, characterDescription, characterImageAbsPath)
@@ -200,6 +216,6 @@ export async function runPipeline(projectId: number): Promise<void> {
 
     await query("UPDATE projects SET status = 'done' WHERE id = ?", [projectId]);
   } catch (err: any) {
-    await markProjectError(projectId, err?.message || String(err));
+    await markProjectError(projectId, friendlyError(stage, err));
   }
 }

@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import type { ProjectWithShots } from "@/types";
 import { fetchProject, imageUrl, ApiError } from "@/lib/api";
+import { addRecentProject } from "@/lib/recentProjects";
 import Collapsible from "@/components/Collapsible";
 import PipelineStepper from "@/components/PipelineStepper";
 import ShotCard from "@/components/ShotCard";
@@ -32,6 +34,36 @@ function statusLabel(status: string): string {
   }
 }
 
+function ProjectSkeleton() {
+  return (
+    <main className="mx-auto max-w-5xl px-6 pb-24 pt-10">
+      <div className="mb-6">
+        <div className="skeleton mb-2 h-3 w-24" />
+        <div className="skeleton h-8 w-3/4 max-w-xl" />
+      </div>
+      <div className="rounded-2xl border border-border bg-surface p-5">
+        <div className="flex items-center gap-2">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="skeleton h-7 w-7 shrink-0 rounded-full" />
+          ))}
+        </div>
+        <div className="skeleton mt-4 h-4 w-56 border-t border-border pt-4" />
+      </div>
+      <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="overflow-hidden rounded-2xl border border-border bg-surface">
+            <div className="skeleton aspect-square w-full rounded-none" />
+            <div className="space-y-2 p-4">
+              <div className="skeleton h-4 w-2/3" />
+              <div className="skeleton h-3 w-full" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </main>
+  );
+}
+
 export default function ProjectPage() {
   const params = useParams<{ id: string }>();
   const [project, setProject] = useState<ProjectWithShots | null>(null);
@@ -39,6 +71,7 @@ export default function ProjectPage() {
   const [notFound, setNotFound] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const statusRef = useRef<string | null>(null);
+  const savedRecentRef = useRef(false);
 
   const poll = useCallback(async () => {
     try {
@@ -70,28 +103,43 @@ export default function ProjectPage() {
     };
   }, [poll]);
 
+  useEffect(() => {
+    if (!project) return;
+    document.title = `${project.idea_prompt.slice(0, 60)} — Shotcraft`;
+    if (!savedRecentRef.current) {
+      savedRecentRef.current = true;
+      addRecentProject({ id: project.id, idea: project.idea_prompt, createdAt: project.created_at });
+    }
+    return () => {
+      document.title = "Shotcraft — AI Video Shot Generator";
+    };
+  }, [project]);
+
   if (notFound) {
     return (
       <main className="mx-auto max-w-3xl px-6 py-16 text-center">
         <h1 className="text-2xl font-bold text-foreground">Project not found</h1>
         <p className="mt-2 text-muted-foreground">This project doesn&apos;t exist, or the backend database was reset.</p>
+        <Link
+          href="/"
+          className="mt-6 inline-flex h-11 items-center rounded-xl bg-accent px-5 text-[15px] font-semibold text-accent-foreground transition-opacity hover:opacity-90"
+        >
+          Start a new project
+        </Link>
       </main>
     );
   }
 
   if (!project) {
     return (
-      <main className="mx-auto max-w-3xl px-6 py-16">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <span className="spinner" />
-          Loading project...
-        </div>
+      <>
+        <ProjectSkeleton />
         {loadError && (
-          <div className="mt-4 rounded-xl border border-danger/30 bg-danger-soft px-4 py-3 text-sm text-danger">
-            {loadError}
+          <div className="mx-auto -mt-16 max-w-3xl px-6" role="alert">
+            <div className="rounded-xl border border-danger/30 bg-danger-soft px-4 py-3 text-sm text-danger">{loadError}</div>
           </div>
         )}
-      </main>
+      </>
     );
   }
 
@@ -104,12 +152,17 @@ export default function ProjectPage() {
         <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Project #{project.id}
         </p>
-        <h1 className="text-2xl font-bold text-foreground sm:text-3xl">{project.idea_prompt}</h1>
+        <h1
+          className="line-clamp-2 text-2xl font-bold text-foreground sm:text-3xl"
+          title={project.idea_prompt}
+        >
+          {project.idea_prompt}
+        </h1>
       </div>
 
-      <div className="rounded-2xl border border-border bg-surface p-5">
-        <PipelineStepper status={project.status} />
-        <div className="mt-4 flex items-center gap-2 border-t border-border pt-4 text-sm text-muted-foreground">
+      <div className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
+        <PipelineStepper project={project} />
+        <div className="mt-4 flex items-center gap-2 border-t border-border pt-4 text-sm text-muted-foreground" aria-live="polite">
           {isRunning && <span className="spinner" />}
           <span>{statusLabel(project.status)}</span>
           {project.shots.length > 0 && (
@@ -121,13 +174,13 @@ export default function ProjectPage() {
       </div>
 
       {loadError && (
-        <div className="mt-6 rounded-xl border border-danger/30 bg-danger-soft px-4 py-3 text-sm text-danger">
+        <div className="mt-6 rounded-xl border border-danger/30 bg-danger-soft px-4 py-3 text-sm text-danger" role="alert">
           {loadError}
         </div>
       )}
 
       {project.status === "error" && project.error_message && (
-        <div className="mt-6 rounded-xl border border-danger/30 bg-danger-soft px-4 py-3 text-sm text-danger">
+        <div className="mt-6 rounded-xl border border-danger/30 bg-danger-soft px-4 py-3 text-sm text-danger" role="alert">
           {project.error_message}
         </div>
       )}
@@ -136,9 +189,9 @@ export default function ProjectPage() {
         <div className="mt-6 space-y-4">
           {project.story_script && (
             <Collapsible title="Story script" defaultOpen={project.status === "story"}>
-              <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">
+              <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
                 {project.story_script}
-              </pre>
+              </div>
             </Collapsible>
           )}
 
@@ -153,9 +206,9 @@ export default function ProjectPage() {
                     alt="Character reference"
                   />
                 )}
-                <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">
+                <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
                   {project.character_description}
-                </pre>
+                </div>
               </div>
             </Collapsible>
           )}

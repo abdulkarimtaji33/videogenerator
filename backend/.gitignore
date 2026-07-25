@@ -3,4 +3,5 @@ dist/
 storage/generated/*
 !storage/generated/.gitkeep
 .env
+.env.*
 *.log

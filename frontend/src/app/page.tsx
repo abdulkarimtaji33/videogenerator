@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { createProject, ApiError } from "@/lib/api";
+import { addRecentProject, getRecentProjects, type RecentProject } from "@/lib/recentProjects";
 
 const EXAMPLE_IDEAS = [
   "A startup founder overwhelmed by manual work discovers an AI platform that automates everything.",
@@ -11,12 +13,28 @@ const EXAMPLE_IDEAS = [
   "A rescue dog trains to become a search-and-rescue hero after a flood.",
 ];
 
+function timeAgo(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const minutes = Math.round(diffMs / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return `${days}d ago`;
+}
+
 export default function HomePage() {
   const router = useRouter();
   const [idea, setIdea] = useState("");
   const [shotCount, setShotCount] = useState(5);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
+
+  useEffect(() => {
+    setRecentProjects(getRecentProjects());
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -36,6 +54,7 @@ export default function HomePage() {
     setError(null);
     try {
       const { id } = await createProject(trimmedIdea, shotCount);
+      addRecentProject({ id, idea: trimmedIdea, createdAt: new Date().toISOString() });
       router.push(`/projects/${id}`);
     } catch (err) {
       const message = err instanceof ApiError ? err.message : "Failed to start pipeline. Please try again.";
@@ -46,6 +65,17 @@ export default function HomePage() {
 
   function adjustShotCount(delta: number) {
     setShotCount((n) => Math.min(20, Math.max(1, n + delta)));
+  }
+
+  function handleShotCountChange(value: string) {
+    if (value === "") {
+      setShotCount(1);
+      return;
+    }
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      setShotCount(Math.min(20, Math.max(1, Math.trunc(parsed))));
+    }
   }
 
   return (
@@ -86,6 +116,7 @@ export default function HomePage() {
               key={example}
               type="button"
               onClick={() => setIdea(example)}
+              title={example}
               className="rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-accent hover:text-accent"
             >
               {example.length > 42 ? `${example.slice(0, 42)}…` : example}
@@ -110,11 +141,12 @@ export default function HomePage() {
               <input
                 id="shotCount"
                 type="number"
+                inputMode="numeric"
                 min={1}
                 max={20}
                 value={shotCount}
-                onChange={(e) => setShotCount(Number(e.target.value))}
-                className="w-14 border-x border-border bg-transparent py-2.5 text-center text-[15px] text-foreground focus:outline-none"
+                onChange={(e) => handleShotCountChange(e.target.value)}
+                className="w-14 border-x border-border bg-transparent py-2.5 text-center text-[15px] text-foreground focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
               />
               <button
                 type="button"
@@ -138,11 +170,32 @@ export default function HomePage() {
         </div>
 
         {error && (
-          <div className="mt-5 rounded-xl border border-danger/30 bg-danger-soft px-4 py-3 text-sm text-danger">
+          <div className="mt-5 rounded-xl border border-danger/30 bg-danger-soft px-4 py-3 text-sm text-danger" role="alert">
             {error}
           </div>
         )}
       </form>
+
+      {recentProjects.length > 0 && (
+        <div className="mt-10">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Your recent projects
+          </h2>
+          <ul className="space-y-2">
+            {recentProjects.map((p) => (
+              <li key={p.id}>
+                <Link
+                  href={`/projects/${p.id}`}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface px-4 py-3 transition-colors hover:border-accent"
+                >
+                  <span className="truncate text-sm text-foreground">{p.idea}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(p.createdAt)}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </main>
   );
 }

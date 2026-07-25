@@ -26,10 +26,10 @@ export default function Collapsible({
         className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-surface-muted"
       >
         <span className="flex min-w-0 flex-col gap-0.5">
-          <span className="flex items-center gap-2 text-[15px] font-semibold text-foreground">
+          <h2 className="flex items-center gap-2 text-[15px] font-semibold text-foreground">
             {title}
             {badge}
-          </span>
+          </h2>
           {subtitle && <span className="truncate text-xs text-muted-foreground">{subtitle}</span>}
         </span>
         <svg
