@@ -46,11 +46,12 @@ export function scenesPrompt(idea: string, story: string, characterDescription: 
       `You break a story into exactly ${shotCount} sequential shots for a short cinematic video. ` +
       "Respond with ONLY a JSON array (no markdown fences, no commentary) of EXACTLY " +
       `${shotCount} elements, where each element is ` +
-      '{"title": string, "duration": string, "description": string, "voiceover": string}. ' +
+      '{"title": string, "description": string, "voiceover": string}. ' +
       'Every field is required and must be a non-empty string; use "" only if a shot truly has no ' +
       'voiceover line. "description" is the visual action/setting of that shot. "voiceover" is the ' +
       "narration line spoken during that shot. Shots must flow as one continuous story arc and " +
-      "reference the same main character throughout.",
+      "reference the same main character throughout. Do not mention clip duration or timing - " +
+      "every shot is generated as a fixed 8-second video clip and that is handled separately.",
     user:
       `Idea:\n${idea}\n\nStory script:\n${story}\n\nMain character:\n${characterDescription}\n\n` +
       `Produce the JSON array of exactly ${shotCount} shots now.`,
@@ -78,18 +79,23 @@ export function shotImagePromptPrompt(
 
 export function shotVideoPromptPrompt(
   shot: { title: string; description: string; voiceover: string },
-  shotImagePrompt: string
+  shotImagePrompt: string,
+  durationSeconds: number
 ) {
   return {
     system:
       "You write a production-ready Veo3-style video generation prompt for animating a single " +
       "still shot image into a short video clip. Focus on what changes over time: subtle motion, " +
       "facial animation, camera movement, and atmosphere - not a re-description of the static " +
-      "image. Include a Voiceover line, a Camera Movement line, and a Style line. Instruct the " +
-      "model to use the supplied image as the first frame and keep the character identity, " +
-      "outfit, and setting identical throughout the clip. No preamble.",
+      "image. Include a Voiceover line, a Camera Movement line, a Style line, and a Duration line. " +
+      "Instruct the model to use the supplied image as the first frame and keep the character " +
+      `identity, outfit, and setting identical throughout the clip. The clip is EXACTLY ` +
+      `${durationSeconds} seconds long - the Duration line must read exactly "Duration: ${durationSeconds} ` +
+      `seconds", all camera movement and action must be paced to fit within that time, and no other ` +
+      "duration or second count may be mentioned anywhere else in the prompt. No preamble.",
     user:
-      `Shot title: ${shot.title}\nShot description: ${shot.description}\nVoiceover: ${shot.voiceover}\n\n` +
+      `Shot title: ${shot.title}\nShot description: ${shot.description}\nVoiceover: ${shot.voiceover}\n` +
+      `Clip duration: exactly ${durationSeconds} seconds\n\n` +
       `First-frame image prompt (for context, the actual image is used as the first frame):\n${shotImagePrompt}\n\n` +
       "Write the video generation prompt now.",
   };

@@ -21,6 +21,7 @@ export interface Shot {
   shot_number: number;
   title: string | null;
   duration: string | null;
+  duration_seconds: number;
   description: string | null;
   voiceover: string | null;
   image_prompt: string | null;
@@ -39,7 +40,9 @@ export interface ProjectWithShots extends Project {
 
 export interface SceneBreakdownItem {
   title: string;
-  duration: string;
   description: string;
   voiceover: string;
 }
+
+/** Every generated shot defaults to an 8-second clip; the user can change it per-shot from the UI. */
+export const DEFAULT_SHOT_DURATION_SECONDS = 8;

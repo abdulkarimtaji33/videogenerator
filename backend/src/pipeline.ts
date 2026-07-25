@@ -11,7 +11,7 @@ import {
   shotImagePromptPrompt,
   shotVideoPromptPrompt,
 } from "./prompts";
-import type { SceneBreakdownItem } from "./types";
+import { DEFAULT_SHOT_DURATION_SECONDS, type SceneBreakdownItem } from "./types";
 import { mapWithConcurrency } from "./concurrency";
 
 // gpt-image-2 enforces a low per-minute rate limit on image edit calls; keep shot
@@ -47,13 +47,12 @@ function parseSceneBreakdown(raw: string, expectedCount: number): SceneBreakdown
   }
   return parsed.map((item, i) => {
     const title = typeof item?.title === "string" && item.title.trim() ? item.title.trim() : `Shot ${i + 1}`;
-    const duration = typeof item?.duration === "string" ? item.duration.trim() : "";
     const description = typeof item?.description === "string" ? item.description.trim() : "";
     const voiceover = typeof item?.voiceover === "string" ? item.voiceover.trim() : "";
     if (!description) {
       throw new Error(`Scene ${i + 1} is missing a description`);
     }
-    return { title, duration, description, voiceover };
+    return { title, description, voiceover };
   });
 }
 
@@ -92,7 +91,7 @@ async function runShot(
     const imagePath = await saveImage(projectId, `shot-${shotNumber}.png`, imageBuffer);
     await query("UPDATE shots SET image_path = ?, status = 'image' WHERE id = ?", [imagePath, shotId]);
 
-    const { system: vpSys, user: vpUser } = shotVideoPromptPrompt(scene, imagePrompt);
+    const { system: vpSys, user: vpUser } = shotVideoPromptPrompt(scene, imagePrompt, DEFAULT_SHOT_DURATION_SECONDS);
     const videoPrompt = await generateText(vpSys, vpUser);
     await query("UPDATE shots SET video_prompt = ?, status = 'done' WHERE id = ?", [videoPrompt, shotId]);
   } catch (err: any) {
@@ -122,12 +121,39 @@ export async function runShotImage(projectId: number, shotId: number): Promise<v
 
     const { system: vpSys, user: vpUser } = shotVideoPromptPrompt(
       { title: shot.title, description: shot.description, voiceover: shot.voiceover },
-      shot.image_prompt
+      shot.image_prompt,
+      shot.duration_seconds || DEFAULT_SHOT_DURATION_SECONDS
     );
     const videoPrompt = await generateText(vpSys, vpUser);
     await query("UPDATE shots SET video_prompt = ?, status = 'done' WHERE id = ?", [videoPrompt, shotId]);
   } catch (err: any) {
     await markShotError(shotId, friendlyError("Image regeneration failed", err));
+    throw err;
+  }
+}
+
+/** Updates a single shot's clip duration and regenerates its video prompt to match (triggered from the UI). */
+export async function runShotDuration(projectId: number, shotId: number, durationSeconds: number): Promise<void> {
+  const [shot] = await query<any[]>("SELECT * FROM shots WHERE id = ? AND project_id = ?", [shotId, projectId]);
+  if (!shot) throw new Error(`Shot ${shotId} not found in project ${projectId}`);
+  if (!shot.image_prompt) throw new Error("Shot has no image prompt yet");
+
+  try {
+    // The previously generated video (if any) was paced for the old duration and no longer matches.
+    await query(
+      "UPDATE shots SET duration_seconds = ?, status = 'video_prompt', video_prompt = NULL, video_path = NULL WHERE id = ?",
+      [durationSeconds, shotId]
+    );
+
+    const { system: vpSys, user: vpUser } = shotVideoPromptPrompt(
+      { title: shot.title, description: shot.description, voiceover: shot.voiceover },
+      shot.image_prompt,
+      durationSeconds
+    );
+    const videoPrompt = await generateText(vpSys, vpUser);
+    await query("UPDATE shots SET video_prompt = ?, status = 'done' WHERE id = ?", [videoPrompt, shotId]);
+  } catch (err: any) {
+    await markShotError(shotId, friendlyError("Clip duration update failed", err));
     throw err;
   }
 }
@@ -199,8 +225,8 @@ export async function runPipeline(projectId: number): Promise<void> {
     for (let i = 0; i < scenes.length; i++) {
       const scene = scenes[i];
       const result = await query<any>(
-        "INSERT INTO shots (project_id, shot_number, title, duration, description, voiceover) VALUES (?, ?, ?, ?, ?, ?)",
-        [projectId, i + 1, scene.title, scene.duration, scene.description, scene.voiceover]
+        "INSERT INTO shots (project_id, shot_number, title, duration_seconds, description, voiceover) VALUES (?, ?, ?, ?, ?, ?)",
+        [projectId, i + 1, scene.title, DEFAULT_SHOT_DURATION_SECONDS, scene.description, scene.voiceover]
       );
       shotIds.push(result.insertId);
     }

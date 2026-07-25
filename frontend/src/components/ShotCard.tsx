@@ -1,19 +1,33 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Shot } from "@/types";
-import { imageUrl } from "@/lib/api";
+import { imageUrl, updateShotDuration, ApiError } from "@/lib/api";
 import { copyToClipboard } from "@/lib/clipboard";
 import StatusBadge from "./StatusBadge";
 import CopyableBlock from "./CopyableBlock";
 
 const BUSY_STATUSES = new Set(["image_prompt", "image", "video"]);
+const MIN_DURATION_SECONDS = 1;
+const MAX_DURATION_SECONDS = 30;
 
-export default function ShotCard({ shot }: { projectId: number; shot: Shot }) {
+export default function ShotCard({ projectId, shot }: { projectId: number; shot: Shot }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [videoPromptCopyState, setVideoPromptCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [pendingDuration, setPendingDuration] = useState<number | null>(null);
+  const [durationError, setDurationError] = useState<string | null>(null);
 
   const isBusy = BUSY_STATUSES.has(shot.status);
+  const isUpdatingDuration = shot.status === "video_prompt" || pendingDuration !== null;
+  const displayedDuration = pendingDuration ?? shot.duration_seconds;
+
+  // Once the server confirms the new duration (and finishes regenerating the video prompt for
+  // it), drop the optimistic override so the UI goes back to trusting the polled value.
+  useEffect(() => {
+    if (pendingDuration !== null && shot.duration_seconds === pendingDuration && shot.status !== "video_prompt") {
+      setPendingDuration(null);
+    }
+  }, [shot.duration_seconds, shot.status, pendingDuration]);
 
   async function handleCopyVideoPrompt() {
     if (!shot.video_prompt) return;
@@ -22,8 +36,24 @@ export default function ShotCard({ shot }: { projectId: number; shot: Shot }) {
     setTimeout(() => setVideoPromptCopyState("idle"), 1500);
   }
 
+  async function handleChangeDuration(delta: number) {
+    if (isBusy || isUpdatingDuration || !shot.image_prompt) return;
+    const next = Math.min(MAX_DURATION_SECONDS, Math.max(MIN_DURATION_SECONDS, displayedDuration + delta));
+    if (next === displayedDuration) return;
+
+    setDurationError(null);
+    setPendingDuration(next);
+    try {
+      await updateShotDuration(projectId, shot.id, next);
+    } catch (err) {
+      setDurationError(err instanceof ApiError ? err.message : "Failed to update clip length.");
+      setPendingDuration(null);
+    }
+  }
+
   const hasDetails = Boolean(shot.voiceover || shot.image_prompt || shot.video_prompt || shot.error_message);
   const canCopyVideoPrompt = Boolean(shot.video_prompt);
+  const canEditDuration = Boolean(shot.image_prompt);
   const showGenerateVideo = Boolean(shot.image_path && shot.video_prompt) && !shot.video_path;
 
   return (
@@ -59,11 +89,9 @@ export default function ShotCard({ shot }: { projectId: number; shot: Shot }) {
         <span className="pointer-events-none absolute left-3 top-3 flex h-7 min-w-7 items-center justify-center rounded-md bg-background/80 px-1.5 font-[family-name:var(--font-display)] text-[13px] font-semibold tabular-nums text-foreground shadow-sm backdrop-blur-sm">
           {String(shot.shot_number).padStart(2, "0")}
         </span>
-        {shot.duration && (
-          <span className="pointer-events-none absolute bottom-3 right-3 rounded-md bg-background/80 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-foreground shadow-sm backdrop-blur-sm">
-            {shot.duration}
-          </span>
-        )}
+        <span className="pointer-events-none absolute bottom-3 right-3 rounded-md bg-background/80 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-foreground shadow-sm backdrop-blur-sm">
+          {displayedDuration}s
+        </span>
       </div>
 
       <div className="p-4">
@@ -78,6 +106,35 @@ export default function ShotCard({ shot }: { projectId: number; shot: Shot }) {
           <p className="mt-2 border-l-2 border-border pl-2.5 text-sm italic leading-relaxed text-muted-foreground">
             &ldquo;{shot.voiceover}&rdquo;
           </p>
+        )}
+
+        {canEditDuration && (
+          <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2">
+            <span className="text-xs font-medium text-muted-foreground">Clip length</span>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => handleChangeDuration(-1)}
+                disabled={isBusy || isUpdatingDuration || displayedDuration <= MIN_DURATION_SECONDS}
+                aria-label="Decrease clip length"
+                className="flex h-7 w-7 items-center justify-center rounded-md text-sm font-medium text-muted-foreground transition-colors hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                −
+              </button>
+              <span className="flex w-10 items-center justify-center text-xs font-semibold tabular-nums text-foreground">
+                {isUpdatingDuration ? <span className="spinner" /> : `${displayedDuration}s`}
+              </span>
+              <button
+                type="button"
+                onClick={() => handleChangeDuration(1)}
+                disabled={isBusy || isUpdatingDuration || displayedDuration >= MAX_DURATION_SECONDS}
+                aria-label="Increase clip length"
+                className="flex h-7 w-7 items-center justify-center rounded-md text-sm font-medium text-muted-foreground transition-colors hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                +
+              </button>
+            </div>
+          </div>
         )}
 
         {hasDetails && (
@@ -167,6 +224,12 @@ export default function ShotCard({ shot }: { projectId: number; shot: Shot }) {
             </button>
           )}
         </div>
+
+        {durationError && (
+          <div className="mt-2 rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-xs text-danger">
+            {durationError}
+          </div>
+        )}
       </div>
     </div>
   );

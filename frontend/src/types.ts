@@ -21,6 +21,7 @@ export interface Shot {
   shot_number: number;
   title: string | null;
   duration: string | null;
+  duration_seconds: number;
   description: string | null;
   voiceover: string | null;
   image_prompt: string | null;

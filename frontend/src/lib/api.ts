@@ -99,3 +99,20 @@ export async function regenerateShotImage(projectId: number, shotId: number): Pr
     throw new ApiError(await parseErrorMessage(res), res.status);
   }
 }
+
+export async function updateShotDuration(projectId: number, shotId: number, durationSeconds: number): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetchWithRetry(`${API_URL}/api/projects/${projectId}/shots/${shotId}/duration`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ durationSeconds }),
+    });
+  } catch {
+    throw new ApiError("Couldn't reach the server. Check your connection and try again.", 0);
+  }
+
+  if (!res.ok) {
+    throw new ApiError(await parseErrorMessage(res), res.status);
+  }
+}

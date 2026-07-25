@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS shots (
   shot_number INT NOT NULL,
   title VARCHAR(255),
   duration VARCHAR(64),
+  duration_seconds INT NOT NULL DEFAULT 8,
   description MEDIUMTEXT,
   voiceover MEDIUMTEXT,
   image_prompt MEDIUMTEXT,
