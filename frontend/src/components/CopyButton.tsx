@@ -1,18 +1,22 @@
 "use client";
 
 import { useState } from "react";
+import { copyToClipboard } from "@/lib/clipboard";
 
 export default function CopyButton({ text, className = "" }: { text: string; className?: string }) {
   const [copied, setCopied] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   async function handleCopy(e: React.MouseEvent) {
     e.stopPropagation();
-    try {
-      await navigator.clipboard.writeText(text);
+    const ok = await copyToClipboard(text);
+    if (ok) {
       setCopied(true);
+      setFailed(false);
       setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard API can be unavailable (e.g. insecure context); fail silently, the text is still visible to select.
+    } else {
+      setFailed(true);
+      setTimeout(() => setFailed(false), 1500);
     }
   }
 
@@ -20,8 +24,10 @@ export default function CopyButton({ text, className = "" }: { text: string; cla
     <button
       type="button"
       onClick={handleCopy}
-      aria-label={copied ? "Copied" : "Copy to clipboard"}
-      className={`flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-accent transition-all hover:bg-accent-soft active:scale-95 ${className}`}
+      aria-label={copied ? "Copied" : failed ? "Copy failed" : "Copy to clipboard"}
+      className={`flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-all hover:bg-accent-soft active:scale-95 ${
+        failed ? "text-danger" : "text-accent"
+      } ${className}`}
     >
       {copied ? (
         <>
@@ -29,6 +35,13 @@ export default function CopyButton({ text, className = "" }: { text: string; cla
             <path d="M20 6L9 17l-5-5" />
           </svg>
           Copied
+        </>
+      ) : failed ? (
+        <>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+          Couldn&apos;t copy
         </>
       ) : (
         <>

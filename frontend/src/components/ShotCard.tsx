@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { Shot } from "@/types";
 import { imageUrl } from "@/lib/api";
+import { copyToClipboard } from "@/lib/clipboard";
 import StatusBadge from "./StatusBadge";
 import CopyableBlock from "./CopyableBlock";
 
@@ -10,19 +11,15 @@ const BUSY_STATUSES = new Set(["image_prompt", "image", "video"]);
 
 export default function ShotCard({ shot }: { projectId: number; shot: Shot }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [videoPromptCopied, setVideoPromptCopied] = useState(false);
+  const [videoPromptCopyState, setVideoPromptCopyState] = useState<"idle" | "copied" | "failed">("idle");
 
   const isBusy = BUSY_STATUSES.has(shot.status);
 
   async function handleCopyVideoPrompt() {
     if (!shot.video_prompt) return;
-    try {
-      await navigator.clipboard.writeText(shot.video_prompt);
-      setVideoPromptCopied(true);
-      setTimeout(() => setVideoPromptCopied(false), 1500);
-    } catch {
-      // Clipboard API can be unavailable (e.g. insecure context); fail silently, the text is still visible to select.
-    }
+    const ok = await copyToClipboard(shot.video_prompt);
+    setVideoPromptCopyState(ok ? "copied" : "failed");
+    setTimeout(() => setVideoPromptCopyState("idle"), 1500);
   }
 
   const hasDetails = Boolean(shot.voiceover || shot.image_prompt || shot.video_prompt || shot.error_message);
@@ -147,9 +144,15 @@ export default function ShotCard({ shot }: { projectId: number; shot: Shot }) {
             <button
               type="button"
               onClick={handleCopyVideoPrompt}
-              className="flex-1 min-h-[38px] rounded-lg border border-border py-2.5 text-xs font-medium text-foreground transition-all hover:bg-surface-muted active:scale-[0.97]"
+              className={`flex-1 min-h-[38px] rounded-lg border py-2.5 text-xs font-medium transition-all hover:bg-surface-muted active:scale-[0.97] ${
+                videoPromptCopyState === "failed" ? "border-danger/30 text-danger" : "border-border text-foreground"
+              }`}
             >
-              {videoPromptCopied ? "Copied" : "Copy video prompt"}
+              {videoPromptCopyState === "copied"
+                ? "Copied"
+                : videoPromptCopyState === "failed"
+                  ? "Couldn't copy"
+                  : "Copy video prompt"}
             </button>
           )}
 
