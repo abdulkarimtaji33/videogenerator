@@ -2,46 +2,32 @@
 
 import { useState } from "react";
 import type { Shot } from "@/types";
-import { imageUrl, generateShotVideo, regenerateShotImage, ApiError } from "@/lib/api";
+import { imageUrl } from "@/lib/api";
 import StatusBadge from "./StatusBadge";
 import CopyableBlock from "./CopyableBlock";
 
 const BUSY_STATUSES = new Set(["image_prompt", "image", "video"]);
 
-export default function ShotCard({ projectId, shot }: { projectId: number; shot: Shot }) {
+export default function ShotCard({ shot }: { projectId: number; shot: Shot }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [videoActionError, setVideoActionError] = useState<string | null>(null);
-  const [imageActionError, setImageActionError] = useState<string | null>(null);
-  const [videoStarting, setVideoStarting] = useState(false);
-  const [imageStarting, setImageStarting] = useState(false);
+  const [videoPromptCopied, setVideoPromptCopied] = useState(false);
 
-  const isBusy = BUSY_STATUSES.has(shot.status) || videoStarting || imageStarting;
+  const isBusy = BUSY_STATUSES.has(shot.status);
 
-  async function handleGenerateVideo() {
-    setVideoActionError(null);
-    setVideoStarting(true);
+  async function handleCopyVideoPrompt() {
+    if (!shot.video_prompt) return;
     try {
-      await generateShotVideo(projectId, shot.id);
-    } catch (err) {
-      setVideoActionError(err instanceof ApiError ? err.message : "Failed to start video generation.");
-      setVideoStarting(false);
-    }
-  }
-
-  async function handleRegenerateImage() {
-    setImageActionError(null);
-    setImageStarting(true);
-    try {
-      await regenerateShotImage(projectId, shot.id);
-    } catch (err) {
-      setImageActionError(err instanceof ApiError ? err.message : "Failed to start image regeneration.");
-      setImageStarting(false);
+      await navigator.clipboard.writeText(shot.video_prompt);
+      setVideoPromptCopied(true);
+      setTimeout(() => setVideoPromptCopied(false), 1500);
+    } catch {
+      // Clipboard API can be unavailable (e.g. insecure context); fail silently, the text is still visible to select.
     }
   }
 
   const hasDetails = Boolean(shot.voiceover || shot.image_prompt || shot.video_prompt || shot.error_message);
-  const canGenerateVideo = Boolean(shot.image_path && shot.video_prompt) && !shot.video_path && !isBusy;
-  const canRegenerateImage = Boolean(shot.image_prompt) && !isBusy;
+  const canCopyVideoPrompt = Boolean(shot.video_prompt);
+  const showGenerateVideo = Boolean(shot.image_path && shot.video_prompt) && !shot.video_path;
 
   return (
     <div className="group overflow-hidden rounded-2xl border border-border bg-surface shadow-card transition-all hover:-translate-y-0.5 hover:shadow-raised">
@@ -157,39 +143,27 @@ export default function ShotCard({ projectId, shot }: { projectId: number; shot:
             )
           )}
 
-          {canRegenerateImage && (
+          {canCopyVideoPrompt && (
             <button
               type="button"
-              onClick={handleRegenerateImage}
-              disabled={imageStarting}
-              className="flex-1 min-h-[38px] rounded-lg border border-border py-2.5 text-xs font-medium text-foreground transition-all hover:bg-surface-muted active:scale-[0.97] disabled:opacity-60 disabled:active:scale-100"
+              onClick={handleCopyVideoPrompt}
+              className="flex-1 min-h-[38px] rounded-lg border border-border py-2.5 text-xs font-medium text-foreground transition-all hover:bg-surface-muted active:scale-[0.97]"
             >
-              {imageStarting ? "Regenerating..." : "Regenerate image"}
+              {videoPromptCopied ? "Copied" : "Copy video prompt"}
             </button>
           )}
 
-          {canGenerateVideo && (
+          {showGenerateVideo && (
             <button
               type="button"
-              onClick={handleGenerateVideo}
-              disabled={videoStarting}
-              className="w-full min-h-[38px] rounded-lg bg-accent py-2.5 text-xs font-semibold text-accent-foreground transition-all hover:opacity-90 active:scale-[0.97] disabled:opacity-60 disabled:active:scale-100"
+              disabled
+              title="Video generation is coming soon"
+              className="w-full min-h-[38px] cursor-not-allowed rounded-lg bg-accent/50 py-2.5 text-xs font-semibold text-accent-foreground opacity-70"
             >
-              {videoStarting ? "Generating video..." : "Generate video"}
+              Generate video (coming soon)
             </button>
           )}
         </div>
-
-        {imageActionError && (
-          <div className="mt-2 rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-xs text-danger">
-            {imageActionError}
-          </div>
-        )}
-        {videoActionError && (
-          <div className="mt-2 rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-xs text-danger">
-            {videoActionError}
-          </div>
-        )}
       </div>
     </div>
   );
