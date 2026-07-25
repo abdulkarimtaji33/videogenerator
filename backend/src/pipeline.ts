@@ -80,7 +80,8 @@ async function runShot(
   shotNumber: number,
   scene: SceneBreakdownItem,
   characterDescription: string,
-  characterImageAbsPath: string
+  characterImageAbsPath: string,
+  durationSeconds: number
 ) {
   try {
     const { system: ipSys, user: ipUser } = shotImagePromptPrompt(characterDescription, scene);
@@ -91,7 +92,7 @@ async function runShot(
     const imagePath = await saveImage(projectId, `shot-${shotNumber}.png`, imageBuffer);
     await query("UPDATE shots SET image_path = ?, status = 'image' WHERE id = ?", [imagePath, shotId]);
 
-    const { system: vpSys, user: vpUser } = shotVideoPromptPrompt(scene, imagePrompt, DEFAULT_SHOT_DURATION_SECONDS);
+    const { system: vpSys, user: vpUser } = shotVideoPromptPrompt(scene, imagePrompt, durationSeconds);
     const videoPrompt = await generateText(vpSys, vpUser);
     await query("UPDATE shots SET video_prompt = ?, status = 'done' WHERE id = ?", [videoPrompt, shotId]);
   } catch (err: any) {
@@ -187,6 +188,7 @@ export async function runPipeline(projectId: number): Promise<void> {
 
     const idea: string = project.idea_prompt;
     const shotCount: number = project.shot_count;
+    const shotDurationSeconds: number = project.shot_duration_seconds || DEFAULT_SHOT_DURATION_SECONDS;
 
     // Step 1: story
     stage = "Writing the story";
@@ -227,7 +229,7 @@ export async function runPipeline(projectId: number): Promise<void> {
       const scene = scenes[i];
       const result = await query<any>(
         "INSERT INTO shots (project_id, shot_number, title, duration_seconds, description, voiceover) VALUES (?, ?, ?, ?, ?, ?)",
-        [projectId, i + 1, scene.title, DEFAULT_SHOT_DURATION_SECONDS, scene.description, scene.voiceover]
+        [projectId, i + 1, scene.title, shotDurationSeconds, scene.description, scene.voiceover]
       );
       shotIds.push(result.insertId);
     }
@@ -238,7 +240,7 @@ export async function runPipeline(projectId: number): Promise<void> {
     stage = "Generating shots";
     const characterImageAbsPath = path.join(STORAGE_ROOT, characterImagePath);
     await mapWithConcurrency(scenes, SHOT_CONCURRENCY, (scene, i) =>
-      runShot(projectId, shotIds[i], i + 1, scene, characterDescription, characterImageAbsPath)
+      runShot(projectId, shotIds[i], i + 1, scene, characterDescription, characterImageAbsPath, shotDurationSeconds)
     );
 
     await query("UPDATE projects SET status = 'done' WHERE id = ?", [projectId]);

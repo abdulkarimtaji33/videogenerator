@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS projects (
   id INT AUTO_INCREMENT PRIMARY KEY,
   idea_prompt TEXT NOT NULL,
   shot_count INT NOT NULL DEFAULT 5,
+  shot_duration_seconds INT NOT NULL DEFAULT 8,
   status ENUM('pending', 'story', 'character', 'scenes', 'shots', 'done', 'error') NOT NULL DEFAULT 'pending',
   story_script MEDIUMTEXT,
   character_description MEDIUMTEXT,

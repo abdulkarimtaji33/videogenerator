@@ -68,6 +68,17 @@ async function main() {
     PREPARE stmt FROM @sql;
     EXECUTE stmt;
     DEALLOCATE PREPARE stmt;
+
+    SET @exists_shot_duration_seconds = (
+      SELECT COUNT(*) FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'projects' AND COLUMN_NAME = 'shot_duration_seconds'
+    );
+    SET @sql = IF(@exists_shot_duration_seconds = 0,
+      'ALTER TABLE projects ADD COLUMN shot_duration_seconds INT NOT NULL DEFAULT 8 AFTER shot_count',
+      'SELECT 1');
+    PREPARE stmt FROM @sql;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
   `);
 
   await connection.end();

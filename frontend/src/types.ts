@@ -5,6 +5,7 @@ export interface Project {
   id: number;
   idea_prompt: string;
   shot_count: number;
+  shot_duration_seconds: number;
   status: ProjectStatus;
   story_script: string | null;
   character_description: string | null;

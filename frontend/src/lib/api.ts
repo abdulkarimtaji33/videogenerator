@@ -38,13 +38,17 @@ async function parseErrorMessage(res: Response): Promise<string> {
   return `Request failed with status ${res.status}`;
 }
 
-export async function createProject(idea: string, shotCount: number): Promise<{ id: number }> {
+export async function createProject(
+  idea: string,
+  shotCount: number,
+  shotDurationSeconds: number
+): Promise<{ id: number }> {
   let res: Response;
   try {
     res = await fetchWithRetry(`${API_URL}/api/projects`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ idea, shotCount }),
+      body: JSON.stringify({ idea, shotCount, shotDurationSeconds }),
     });
   } catch {
     throw new ApiError("Couldn't reach the server. Check your connection and try again.", 0);

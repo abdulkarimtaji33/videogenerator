@@ -3,10 +3,12 @@ import { query } from "../db";
 import { runPipeline, runShotImage, runShotVideo, runShotDuration } from "../pipeline";
 import { asyncHandler } from "../asyncHandler";
 import { AppError } from "../errors";
-import { MAX_IMAGE_REGENERATIONS } from "../types";
-
-const MIN_SHOT_DURATION_SECONDS = 1;
-const MAX_SHOT_DURATION_SECONDS = 30;
+import {
+  MAX_IMAGE_REGENERATIONS,
+  DEFAULT_SHOT_DURATION_SECONDS,
+  MIN_SHOT_DURATION_SECONDS,
+  MAX_SHOT_DURATION_SECONDS,
+} from "../types";
 
 export const projectsRouter = Router();
 
@@ -18,6 +20,10 @@ projectsRouter.post(
     const shotCount = Number.isFinite(shotCountRaw)
       ? Math.max(1, Math.min(20, Math.trunc(shotCountRaw)))
       : 5;
+    const shotDurationRaw = req.body?.shotDurationSeconds;
+    const shotDurationSeconds = Number.isFinite(shotDurationRaw)
+      ? Math.max(MIN_SHOT_DURATION_SECONDS, Math.min(MAX_SHOT_DURATION_SECONDS, Math.trunc(shotDurationRaw)))
+      : DEFAULT_SHOT_DURATION_SECONDS;
 
     if (!idea) {
       throw new AppError("idea is required", 400);
@@ -27,8 +33,8 @@ projectsRouter.post(
     }
 
     const result = await query<any>(
-      "INSERT INTO projects (idea_prompt, shot_count, status) VALUES (?, ?, 'pending')",
-      [idea, shotCount]
+      "INSERT INTO projects (idea_prompt, shot_count, shot_duration_seconds, status) VALUES (?, ?, ?, 'pending')",
+      [idea, shotCount, shotDurationSeconds]
     );
     const projectId = result.insertId as number;
 

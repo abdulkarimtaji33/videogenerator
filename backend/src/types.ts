@@ -5,6 +5,7 @@ export interface Project {
   id: number;
   idea_prompt: string;
   shot_count: number;
+  shot_duration_seconds: number;
   status: ProjectStatus;
   story_script: string | null;
   character_description: string | null;
@@ -47,6 +48,8 @@ export interface SceneBreakdownItem {
 
 /** Every generated shot defaults to an 8-second clip; the user can change it per-shot from the UI. */
 export const DEFAULT_SHOT_DURATION_SECONDS = 8;
+export const MIN_SHOT_DURATION_SECONDS = 1;
+export const MAX_SHOT_DURATION_SECONDS = 30;
 
 /** A shot's image can be manually regenerated at most this many times, to bound per-shot image spend. */
 export const MAX_IMAGE_REGENERATIONS = 2;

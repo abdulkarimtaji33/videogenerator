@@ -15,6 +15,9 @@ const EXAMPLE_IDEAS = [
 
 const IDEA_MAX_LENGTH = 4000;
 const SECONDS_PER_SHOT = 40;
+const MIN_SHOT_DURATION = 1;
+const MAX_SHOT_DURATION = 30;
+const DEFAULT_SHOT_DURATION = 8;
 
 function timeAgo(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -31,6 +34,7 @@ export default function HomePage() {
   const router = useRouter();
   const [idea, setIdea] = useState("");
   const [shotCount, setShotCount] = useState(5);
+  const [shotDuration, setShotDuration] = useState(DEFAULT_SHOT_DURATION);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
@@ -51,11 +55,15 @@ export default function HomePage() {
       setError("Number of shots must be between 1 and 20.");
       return;
     }
+    if (!Number.isFinite(shotDuration) || shotDuration < MIN_SHOT_DURATION || shotDuration > MAX_SHOT_DURATION) {
+      setError(`Clip length must be between ${MIN_SHOT_DURATION} and ${MAX_SHOT_DURATION} seconds.`);
+      return;
+    }
 
     setSubmitting(true);
     setError(null);
     try {
-      const { id } = await createProject(trimmedIdea, shotCount);
+      const { id } = await createProject(trimmedIdea, shotCount, shotDuration);
       addRecentProject({ id, idea: trimmedIdea, createdAt: new Date().toISOString() });
       router.push(`/projects/${id}`);
     } catch (err) {
@@ -89,6 +97,21 @@ export default function HomePage() {
     const parsed = Number(value);
     if (Number.isFinite(parsed)) {
       setShotCount(Math.min(20, Math.max(1, Math.trunc(parsed))));
+    }
+  }
+
+  function adjustShotDuration(delta: number) {
+    setShotDuration((n) => Math.min(MAX_SHOT_DURATION, Math.max(MIN_SHOT_DURATION, n + delta)));
+  }
+
+  function handleShotDurationChange(value: string) {
+    if (value === "") {
+      setShotDuration(MIN_SHOT_DURATION);
+      return;
+    }
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      setShotDuration(Math.min(MAX_SHOT_DURATION, Math.max(MIN_SHOT_DURATION, Math.trunc(parsed))));
     }
   }
 
@@ -153,44 +176,86 @@ export default function HomePage() {
         </div>
 
         <div className="mt-6 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <label htmlFor="shotCount" className="mb-2 block text-sm font-medium text-foreground">
-              Number of shots
-            </label>
-            <div className="flex items-center rounded-xl border border-border bg-background">
-              <button
-                type="button"
-                onClick={() => adjustShotCount(-1)}
-                disabled={shotCount <= 1}
-                aria-label="Decrease shot count"
-                className="flex h-11 w-11 items-center justify-center text-lg text-muted-foreground transition-colors hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                −
-              </button>
-              <input
-                id="shotCount"
-                type="number"
-                inputMode="numeric"
-                min={1}
-                max={20}
-                value={shotCount}
-                onChange={(e) => handleShotCountChange(e.target.value)}
-                aria-describedby="shotCountHelp"
-                className="w-14 border-x border-border bg-transparent py-2.5 text-center text-base text-foreground focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
-              />
-              <button
-                type="button"
-                onClick={() => adjustShotCount(1)}
-                disabled={shotCount >= 20}
-                aria-label="Increase shot count"
-                className="flex h-11 w-11 items-center justify-center text-lg text-muted-foreground transition-colors hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                +
-              </button>
+          <div className="flex flex-wrap items-end gap-4">
+            <div>
+              <label htmlFor="shotCount" className="mb-2 block text-sm font-medium text-foreground">
+                Number of shots
+              </label>
+              <div className="flex items-center rounded-xl border border-border bg-background">
+                <button
+                  type="button"
+                  onClick={() => adjustShotCount(-1)}
+                  disabled={shotCount <= 1}
+                  aria-label="Decrease shot count"
+                  className="flex h-11 w-11 items-center justify-center text-lg text-muted-foreground transition-colors hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  −
+                </button>
+                <input
+                  id="shotCount"
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={20}
+                  value={shotCount}
+                  onChange={(e) => handleShotCountChange(e.target.value)}
+                  aria-describedby="shotCountHelp"
+                  className="w-14 border-x border-border bg-transparent py-2.5 text-center text-base text-foreground focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
+                />
+                <button
+                  type="button"
+                  onClick={() => adjustShotCount(1)}
+                  disabled={shotCount >= 20}
+                  aria-label="Increase shot count"
+                  className="flex h-11 w-11 items-center justify-center text-lg text-muted-foreground transition-colors hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  +
+                </button>
+              </div>
+              <p id="shotCountHelp" className="mt-1.5 text-xs text-muted-foreground">
+                ~{estimatedMinutes} min to generate
+              </p>
             </div>
-            <p id="shotCountHelp" className="mt-1.5 text-xs text-muted-foreground">
-              ~{estimatedMinutes} min to generate
-            </p>
+
+            <div>
+              <label htmlFor="shotDuration" className="mb-2 block text-sm font-medium text-foreground">
+                Clip length
+              </label>
+              <div className="flex items-center rounded-xl border border-border bg-background">
+                <button
+                  type="button"
+                  onClick={() => adjustShotDuration(-1)}
+                  disabled={shotDuration <= MIN_SHOT_DURATION}
+                  aria-label="Decrease clip length"
+                  className="flex h-11 w-11 items-center justify-center text-lg text-muted-foreground transition-colors hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  −
+                </button>
+                <input
+                  id="shotDuration"
+                  type="number"
+                  inputMode="numeric"
+                  min={MIN_SHOT_DURATION}
+                  max={MAX_SHOT_DURATION}
+                  value={shotDuration}
+                  onChange={(e) => handleShotDurationChange(e.target.value)}
+                  aria-describedby="shotDurationHelp"
+                  className="w-14 border-x border-border bg-transparent py-2.5 text-center text-base text-foreground focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
+                />
+                <button
+                  type="button"
+                  onClick={() => adjustShotDuration(1)}
+                  disabled={shotDuration >= MAX_SHOT_DURATION}
+                  aria-label="Increase clip length"
+                  className="flex h-11 w-11 items-center justify-center text-lg text-muted-foreground transition-colors hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  +
+                </button>
+              </div>
+              <p id="shotDurationHelp" className="mt-1.5 text-xs text-muted-foreground">
+                seconds per shot
+              </p>
+            </div>
           </div>
 
           <button
