@@ -57,6 +57,17 @@ async function main() {
     PREPARE stmt FROM @sql;
     EXECUTE stmt;
     DEALLOCATE PREPARE stmt;
+
+    SET @exists_image_regenerations = (
+      SELECT COUNT(*) FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'shots' AND COLUMN_NAME = 'image_regenerations'
+    );
+    SET @sql = IF(@exists_image_regenerations = 0,
+      'ALTER TABLE shots ADD COLUMN image_regenerations INT NOT NULL DEFAULT 0 AFTER image_path',
+      'SELECT 1');
+    PREPARE stmt FROM @sql;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
   `);
 
   await connection.end();

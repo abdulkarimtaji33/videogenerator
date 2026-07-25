@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { Shot } from "@/types";
-import { imageUrl, updateShotDuration, ApiError } from "@/lib/api";
+import { imageUrl, updateShotDuration, regenerateShotImage, ApiError } from "@/lib/api";
 import { copyToClipboard } from "@/lib/clipboard";
 import StatusBadge from "./StatusBadge";
 import CopyableBlock from "./CopyableBlock";
@@ -10,14 +10,17 @@ import CopyableBlock from "./CopyableBlock";
 const BUSY_STATUSES = new Set(["image_prompt", "image", "video"]);
 const MIN_DURATION_SECONDS = 1;
 const MAX_DURATION_SECONDS = 30;
+const MAX_IMAGE_REGENERATIONS = 2;
 
 export default function ShotCard({ projectId, shot }: { projectId: number; shot: Shot }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [videoPromptCopyState, setVideoPromptCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [pendingDuration, setPendingDuration] = useState<number | null>(null);
   const [durationError, setDurationError] = useState<string | null>(null);
+  const [imageStarting, setImageStarting] = useState(false);
+  const [imageActionError, setImageActionError] = useState<string | null>(null);
 
-  const isBusy = BUSY_STATUSES.has(shot.status);
+  const isBusy = BUSY_STATUSES.has(shot.status) || imageStarting;
   const isUpdatingDuration = shot.status === "video_prompt" || pendingDuration !== null;
   const displayedDuration = pendingDuration ?? shot.duration_seconds;
 
@@ -29,11 +32,31 @@ export default function ShotCard({ projectId, shot }: { projectId: number; shot:
     }
   }, [shot.duration_seconds, shot.status, pendingDuration]);
 
+  // Once polling confirms the server has picked up the regeneration (status flips to a busy
+  // state), stop relying on the optimistic flag so isBusy tracks the real status going forward
+  // instead of staying stuck true forever.
+  useEffect(() => {
+    if (imageStarting && BUSY_STATUSES.has(shot.status)) {
+      setImageStarting(false);
+    }
+  }, [shot.status, imageStarting]);
+
   async function handleCopyVideoPrompt() {
     if (!shot.video_prompt) return;
     const ok = await copyToClipboard(shot.video_prompt);
     setVideoPromptCopyState(ok ? "copied" : "failed");
     setTimeout(() => setVideoPromptCopyState("idle"), 1500);
+  }
+
+  async function handleRegenerateImage() {
+    setImageActionError(null);
+    setImageStarting(true);
+    try {
+      await regenerateShotImage(projectId, shot.id);
+    } catch (err) {
+      setImageActionError(err instanceof ApiError ? err.message : "Failed to start image regeneration.");
+      setImageStarting(false);
+    }
   }
 
   async function handleChangeDuration(delta: number) {
@@ -55,6 +78,8 @@ export default function ShotCard({ projectId, shot }: { projectId: number; shot:
   const canCopyVideoPrompt = Boolean(shot.video_prompt);
   const canEditDuration = Boolean(shot.image_prompt);
   const showGenerateVideo = Boolean(shot.image_path && shot.video_prompt) && !shot.video_path;
+  const showRegenerateImage = Boolean(shot.image_prompt);
+  const regenerationsLeft = Math.max(0, MAX_IMAGE_REGENERATIONS - shot.image_regenerations);
 
   return (
     <div className="group overflow-hidden rounded-2xl border border-border bg-surface shadow-card transition-all hover:-translate-y-0.5 hover:shadow-raised">
@@ -213,6 +238,24 @@ export default function ShotCard({ projectId, shot }: { projectId: number; shot:
             </button>
           )}
 
+          {showRegenerateImage && (
+            <button
+              type="button"
+              onClick={handleRegenerateImage}
+              disabled={isBusy || regenerationsLeft <= 0}
+              title={regenerationsLeft <= 0 ? `Regeneration limit reached (max ${MAX_IMAGE_REGENERATIONS})` : undefined}
+              className="flex-1 min-h-[38px] rounded-lg border border-border py-2.5 text-xs font-medium text-foreground transition-all hover:bg-surface-muted active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100"
+            >
+              {imageStarting
+                ? "Regenerating..."
+                : regenerationsLeft <= 0
+                  ? "Regeneration limit reached"
+                  : regenerationsLeft === 1
+                    ? "Regenerate image (1 left)"
+                    : "Regenerate image"}
+            </button>
+          )}
+
           {showGenerateVideo && (
             <button
               type="button"
@@ -225,6 +268,11 @@ export default function ShotCard({ projectId, shot }: { projectId: number; shot:
           )}
         </div>
 
+        {imageActionError && (
+          <div className="mt-2 rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-xs text-danger">
+            {imageActionError}
+          </div>
+        )}
         {durationError && (
           <div className="mt-2 rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-xs text-danger">
             {durationError}

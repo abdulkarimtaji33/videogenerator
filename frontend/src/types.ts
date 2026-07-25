@@ -26,6 +26,7 @@ export interface Shot {
   voiceover: string | null;
   image_prompt: string | null;
   image_path: string | null;
+  image_regenerations: number;
   video_prompt: string | null;
   video_path: string | null;
   status: ShotStatus;

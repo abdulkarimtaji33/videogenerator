@@ -110,9 +110,10 @@ export async function runShotImage(projectId: number, shotId: number): Promise<v
   if (!project.character_image_path) throw new Error("Project has no character reference image yet");
 
   try {
-    await query("UPDATE shots SET status = 'image_prompt', video_prompt = NULL, video_path = NULL WHERE id = ?", [
-      shotId,
-    ]);
+    await query(
+      "UPDATE shots SET status = 'image_prompt', video_prompt = NULL, video_path = NULL, image_regenerations = image_regenerations + 1 WHERE id = ?",
+      [shotId]
+    );
 
     const characterImageAbsPath = path.join(STORAGE_ROOT, project.character_image_path);
     const imageBuffer = await generateImageWithReference(shot.image_prompt, characterImageAbsPath);

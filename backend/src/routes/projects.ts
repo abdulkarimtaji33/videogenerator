@@ -3,6 +3,7 @@ import { query } from "../db";
 import { runPipeline, runShotImage, runShotVideo, runShotDuration } from "../pipeline";
 import { asyncHandler } from "../asyncHandler";
 import { AppError } from "../errors";
+import { MAX_IMAGE_REGENERATIONS } from "../types";
 
 const MIN_SHOT_DURATION_SECONDS = 1;
 const MAX_SHOT_DURATION_SECONDS = 30;
@@ -82,6 +83,9 @@ projectsRouter.post(
     }
     if (!shot.image_prompt) {
       throw new AppError("shot has no image prompt yet", 400);
+    }
+    if (shot.image_regenerations >= MAX_IMAGE_REGENERATIONS) {
+      throw new AppError(`This shot's image has already been regenerated the maximum of ${MAX_IMAGE_REGENERATIONS} times`, 400);
     }
 
     runShotImage(projectId, shotId).catch((err) => {

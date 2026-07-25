@@ -26,6 +26,7 @@ export interface Shot {
   voiceover: string | null;
   image_prompt: string | null;
   image_path: string | null;
+  image_regenerations: number;
   video_prompt: string | null;
   video_path: string | null;
   status: ShotStatus;
@@ -46,3 +47,6 @@ export interface SceneBreakdownItem {
 
 /** Every generated shot defaults to an 8-second clip; the user can change it per-shot from the UI. */
 export const DEFAULT_SHOT_DURATION_SECONDS = 8;
+
+/** A shot's image can be manually regenerated at most this many times, to bound per-shot image spend. */
+export const MAX_IMAGE_REGENERATIONS = 2;

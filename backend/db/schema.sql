@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS shots (
   voiceover MEDIUMTEXT,
   image_prompt MEDIUMTEXT,
   image_path VARCHAR(512),
+  image_regenerations INT NOT NULL DEFAULT 0,
   video_prompt MEDIUMTEXT,
   video_path VARCHAR(512),
   status ENUM('pending', 'image_prompt', 'image', 'video_prompt', 'video', 'done', 'error') NOT NULL DEFAULT 'pending',
