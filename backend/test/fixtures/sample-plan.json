@@ -1,0 +1,32 @@
+{
+  "id": "sample-saturn",
+  "niche": "space_science_curiosity",
+  "topic": "Saturn is less dense than water",
+  "title": "Saturn would float on water",
+  "flow": "google-flow",
+  "targetSeconds": 16,
+  "hook": {
+    "type": "contrarian",
+    "line": "Saturn is lighter than water.",
+    "visual": "A huge golden ringed planet floating like a beach ball on a calm endless dark ocean at dusk."
+  },
+  "styleBible": "Photoreal cinematic space documentary look, deep blacks, soft volumetric light, anamorphic lens, vertical 9:16 framing.",
+  "clips": [
+    {
+      "id": "c1",
+      "seconds": 8,
+      "purpose": "hook",
+      "narration": "Saturn is lighter than water. It would float.",
+      "prompt": "Photoreal cinematic space documentary look, deep blacks, soft volumetric light, anamorphic lens, vertical 9:16 framing. A huge golden ringed planet floats like a beach ball on a calm endless dark ocean at dusk, rings tilted, gentle ripples spreading across the water. Slow push-in from a low angle, warm rim light on the planet's clouds. Audio: soft ocean waves and a low ambient hum, no speech, no music. No text, no logos, no watermarks."
+    },
+    {
+      "id": "c2",
+      "seconds": 8,
+      "purpose": "proof",
+      "narration": "Its rings are mostly ice. They would float too.",
+      "prompt": "Photoreal cinematic space documentary look, deep blacks, soft volumetric light, anamorphic lens, vertical 9:16 framing. Static wide shot of the thin bright rings of a ringed planet lying flat on dark glassy water, tiny ice fragments sparkling and drifting apart, a faint mist rising at the horizon. Audio: quiet wind and faint ice crackle, no speech, no music. No text, no logos, no watermarks."
+    }
+  ],
+  "narration": { "mode": "tts" },
+  "facts": [{ "claim": "Saturn's average density is below water's", "source": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/saturnfact.html" }]
+}

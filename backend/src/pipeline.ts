@@ -1,8 +1,9 @@
 import fs from "fs";
 import path from "path";
 import { query } from "./db";
-import { generateText, generateImage, generateImageWithReference } from "./openai";
-import { generateVideoFromImage } from "./higgsfield";
+import { generateText } from "./openai";
+import { makeImage } from "./images";
+import { generateClipWithFallback } from "./providers/clips";
 import {
   storyPrompt,
   characterPrompt,
@@ -18,12 +19,29 @@ import { mapWithConcurrency } from "./concurrency";
 // generation well under it instead of firing all shots at once and relying on retries.
 const SHOT_CONCURRENCY = Number(process.env.SHOT_CONCURRENCY || 3);
 
-export const STORAGE_ROOT = path.join(process.cwd(), "storage", "generated");
+/** Shot images are portrait because the videos are vertical (9:16); set SHOT_IMAGE_SIZE=1536x1024 for landscape. */
+const SHOT_IMAGE_SIZE = (process.env.SHOT_IMAGE_SIZE as "1024x1024" | "1024x1536" | "1536x1024") || "1024x1536";
+
+export const STORAGE_ROOT =path.join(process.cwd(), "storage", "generated");
 
 function projectDir(projectId: number): string {
   const dir = path.join(STORAGE_ROOT, String(projectId));
   fs.mkdirSync(dir, { recursive: true });
   return dir;
+}
+
+/**
+ * The model-written video prompt can contain a "Voiceover:" line (the words the narrator will say). Sent to a video
+ * model it risks spoken or burned-in text, so those lines are removed here (the narration is voiced separately) and
+ * the clip is told to stay silent and text-free.
+ */
+export function cleanVideoPrompt(prompt: string): string {
+  const kept = prompt
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*(voice-?over|narration|narrator)\s*:/i.test(line))
+    .join("\n")
+    .trim();
+  return `${kept}\n\nAudio: natural ambient sound only, no speech, no music. No text, no captions, no logos, no watermarks.`;
 }
 
 async function saveImage(projectId: number, filename: string, data: Buffer): Promise<string> {
@@ -88,9 +106,10 @@ async function runShot(
     const imagePrompt = await generateText(ipSys, ipUser);
     await query("UPDATE shots SET image_prompt = ?, status = 'image_prompt' WHERE id = ?", [imagePrompt, shotId]);
 
-    const imageBuffer = await generateImageWithReference(imagePrompt, characterImageAbsPath);
-    const imagePath = await saveImage(projectId, `shot-${shotNumber}.png`, imageBuffer);
-    await query("UPDATE shots SET image_path = ?, status = 'image' WHERE id = ?", [imagePath, shotId]);
+    const [pr] = await query<any[]>("SELECT image_provider, image_fallback FROM projects WHERE id = ?", [projectId]);
+    const made = await makeImage({ prompt: imagePrompt, size: SHOT_IMAGE_SIZE, refs: [characterImageAbsPath], provider: pr?.image_provider, fallback: !!pr?.image_fallback });
+    const imagePath = await saveImage(projectId, `shot-${shotNumber}.png`, made.buffer);
+    await query("UPDATE shots SET image_path = ?, status = 'image', image_provider_used = ?, image_ms = ? WHERE id = ?", [imagePath, made.provider, made.ms, shotId]);
 
     const { system: vpSys, user: vpUser } = shotVideoPromptPrompt(scene, imagePrompt, durationSeconds);
     const videoPrompt = await generateText(vpSys, vpUser);
@@ -108,6 +127,30 @@ export async function runShotImage(projectId: number, shotId: number): Promise<v
 
   const [project] = await query<any[]>("SELECT * FROM projects WHERE id = ?", [projectId]);
   if (!project) throw new Error(`Project ${projectId} not found`);
+
+  // Niche-aware projects: re-render from the anchors that appear in this shot (or from text when there are none).
+  // The shot keeps its video prompt; only its image (and any old clip) is replaced.
+  if (project.niche) {
+    try {
+      await query("UPDATE shots SET status = 'image', video_path = NULL, image_regenerations = image_regenerations + 1 WHERE id = ?", [shotId]);
+      let keys: string[] = [];
+      try {
+        keys = JSON.parse(shot.anchor_keys || "[]");
+      } catch {
+        keys = [];
+      }
+      const anchors = keys.length ? await query<any[]>("SELECT image_path FROM anchors WHERE project_id = ? AND `key` IN (?) AND image_path IS NOT NULL", [projectId, keys]) : [];
+      const refs = anchors.map((a) => path.join(STORAGE_ROOT, a.image_path));
+      const size = project.format === "long" ? "1536x1024" : "1024x1536";
+      const made = await makeImage({ prompt: shot.image_prompt, size, refs, provider: project.image_provider, fallback: !!project.image_fallback });
+      const imagePath = await saveImage(projectId, `shot-${shot.shot_number}.png`, made.buffer);
+      await query("UPDATE shots SET image_path = ?, status = 'done', image_provider_used = ?, image_ms = ? WHERE id = ?", [imagePath, made.provider, made.ms, shotId]);
+    } catch (err: any) {
+      await markShotError(shotId, friendlyError("Image regeneration failed", err));
+      throw err;
+    }
+    return;
+  }
   if (!project.character_image_path) throw new Error("Project has no character reference image yet");
 
   try {
@@ -117,9 +160,9 @@ export async function runShotImage(projectId: number, shotId: number): Promise<v
     );
 
     const characterImageAbsPath = path.join(STORAGE_ROOT, project.character_image_path);
-    const imageBuffer = await generateImageWithReference(shot.image_prompt, characterImageAbsPath);
-    const imagePath = await saveImage(projectId, `shot-${shot.shot_number}.png`, imageBuffer);
-    await query("UPDATE shots SET image_path = ?, status = 'image' WHERE id = ?", [imagePath, shotId]);
+    const made = await makeImage({ prompt: shot.image_prompt, size: SHOT_IMAGE_SIZE, refs: [characterImageAbsPath], provider: project.image_provider, fallback: !!project.image_fallback });
+    const imagePath = await saveImage(projectId, `shot-${shot.shot_number}.png`, made.buffer);
+    await query("UPDATE shots SET image_path = ?, status = 'image', image_provider_used = ?, image_ms = ? WHERE id = ?", [imagePath, made.provider, made.ms, shotId]);
 
     const { system: vpSys, user: vpUser } = shotVideoPromptPrompt(
       { title: shot.title, description: shot.description, voiceover: shot.voiceover },
@@ -170,10 +213,34 @@ export async function runShotVideo(projectId: number, shotId: number): Promise<v
   try {
     await query("UPDATE shots SET status = 'video' WHERE id = ?", [shotId]);
 
-    const imageAbsPath = path.join(STORAGE_ROOT, shot.image_path);
-    const videoBuffer = await generateVideoFromImage(imageAbsPath, shot.video_prompt);
-    const videoPath = await saveImage(projectId, `shot-${shot.shot_number}.mp4`, videoBuffer);
-    await query("UPDATE shots SET video_path = ?, status = 'done' WHERE id = ?", [videoPath, shotId]);
+    const [project] = await query<any[]>("SELECT niche, format FROM projects WHERE id = ?", [projectId]);
+    const niche = Boolean(project?.niche);
+    let imageAbsPath = path.join(STORAGE_ROOT, shot.image_path);
+    // Continuity: a shot that continues the previous one starts from that clip's LAST frame, so the two shots join
+    // without a jump. If the previous clip does not exist yet, the shot's own image is used.
+    if (niche && shot.continues_previous && shot.shot_number > 1) {
+      const [prev] = await query<any[]>("SELECT video_path FROM shots WHERE project_id = ? AND shot_number = ?", [projectId, shot.shot_number - 1]);
+      const prevAbs = prev?.video_path ? path.join(STORAGE_ROOT, prev.video_path) : "";
+      if (prevAbs && fs.existsSync(prevAbs)) {
+        const { extractLastFrame } = await import("./media/clips");
+        imageAbsPath = await extractLastFrame(prevAbs, path.join(projectDir(projectId), "clips", `shot-${shot.shot_number}-start.png`));
+      }
+    }
+    // The clip comes from the first available provider in Settings > provider order (Veoframe first, then
+    // Google Flow, Higgsfield and fal), with the shot image as the first frame.
+    const clip = await generateClipWithFallback({
+      planId: `project-${projectId}`,
+      clipId: `shot-${shot.shot_number}`,
+      // Niche prompts are already built clean (no narration, an Audio line, no text); old prompts need cleaning.
+      prompt: niche ? shot.video_prompt : cleanVideoPrompt(shot.video_prompt),
+      seconds: shot.duration_seconds || DEFAULT_SHOT_DURATION_SECONDS,
+      // Same orientation as the video: the project's format, else the shot-image setting (portrait by default).
+      aspect: niche ? (project.format === "long" ? "16:9" : "9:16") : SHOT_IMAGE_SIZE === "1536x1024" ? "16:9" : "9:16",
+      referenceImage: imageAbsPath,
+      runDir: projectDir(projectId),
+    }, { automaticOnly: true });
+    const videoPath = path.relative(STORAGE_ROOT, clip.file).replace(/\\/g, "/");
+    await query("UPDATE shots SET video_path = ?, provider = ?, status = 'done' WHERE id = ?", [videoPath, clip.provider, shotId]);
   } catch (err: any) {
     await markShotError(shotId, friendlyError("Video generation failed", err));
     throw err;
@@ -209,7 +276,8 @@ export async function runPipeline(projectId: number): Promise<void> {
     stage = "Generating the character reference image";
     const { system: cipSys, user: cipUser } = characterImagePromptPrompt(characterDescription);
     const characterImagePrompt = await generateText(cipSys, cipUser);
-    const characterImageBuffer = await generateImage(characterImagePrompt);
+    const [pr0] = await query<any[]>("SELECT image_provider, image_fallback FROM projects WHERE id = ?", [projectId]);
+    const characterImageBuffer = (await makeImage({ prompt: characterImagePrompt, size: "1024x1024", provider: pr0?.image_provider, fallback: !!pr0?.image_fallback })).buffer;
     const characterImagePath = await saveImage(projectId, "character.png", characterImageBuffer);
     await query(
       "UPDATE projects SET character_image_prompt = ?, character_image_path = ? WHERE id = ?",

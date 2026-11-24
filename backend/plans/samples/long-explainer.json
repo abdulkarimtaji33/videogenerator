@@ -1,0 +1,49 @@
+{
+  "id": "sample-long-explainer",
+  "niche": "space_science_curiosity",
+  "topic": "Sample: a long-form explainer with AI clips, a Ken Burns still and text cards",
+  "title": "Why Saturn would float on water",
+  "flow": "google-flow",
+  "format": "long",
+  "aspect": "16:9",
+  "targetSeconds": 56,
+  "hook": {
+    "type": "contrarian",
+    "line": "Saturn is lighter than water.",
+    "visual": "A colossal golden ringed planet floating like a beach ball on a calm endless dark ocean at dusk."
+  },
+  "styleBible": "Photoreal cinematic space documentary look, deep blacks, soft volumetric light, anamorphic lens, widescreen 16:9 framing.",
+  "clips": [
+    {
+      "id": "hook",
+      "seconds": 8,
+      "narration": "Saturn is lighter than water. Drop it in an ocean and it floats. But there is a catch.",
+      "prompt": "Photoreal cinematic space documentary look, deep blacks, soft volumetric light, anamorphic lens, widescreen 16:9 framing. A colossal golden-banded ringed planet floats like a beach ball on a calm, endless dark ocean at dusk, its tilted rings catching the last warm light, gentle ripples spreading across the glassy water. Slow push-in from a low angle just above the waterline. Audio: soft lapping water and a low ambient hum, no speech, no music. No text, no logos, no watermarks."
+    },
+    { "id": "title-card", "type": "card", "seconds": 10, "text": "Why Saturn floats", "narration": "To see why, start with what a planet is made of." },
+    {
+      "id": "density",
+      "seconds": 8,
+      "narration": "Saturn is mostly hydrogen and helium, so its average density is only about two thirds of water's.",
+      "prompt": "Photoreal cinematic space documentary look, deep blacks, soft volumetric light, anamorphic lens, widescreen 16:9 framing. The pale golden cloud bands of a ringed planet bob gently on dark water, its lower edge partly submerged, a soft wake rippling outward. Slow lateral tracking shot along the waterline, cool rim light against warm gold clouds. Audio: quiet water movement and a low steady drone, no speech, no music. No text, no logos, no watermarks."
+    },
+    { "id": "rings-still", "type": "still_kenburns", "image": "assets/saturn-rings.png", "seconds": 12, "narration": "Its rings are different. They are made mostly of water ice, in pieces from dust grains to boulders." },
+    {
+      "id": "ocean",
+      "seconds": 8,
+      "narration": "Saturn really is lighter than water. But no ocean we know of is big enough to prove it.",
+      "prompt": "Photoreal cinematic space documentary look, deep blacks, soft volumetric light, anamorphic lens, widescreen 16:9 framing. Wide shot from far away: a small glowing ringed planet floats on an ocean that stretches without end under a star-filled sky, calm and silent, with the same warm dusk glow as the opening shot. Slow pull-back that reveals the vast emptiness around the planet. Audio: very soft waves and a fading low hum, no speech, no music. No text, no logos, no watermarks."
+    },
+    { "id": "end-card", "type": "card", "seconds": 10, "text": "Source: NASA", "narration": "Data from NASA's Saturn fact sheet." }
+  ],
+  "chapters": [
+    { "title": "The claim", "clipId": "hook" },
+    { "title": "Why it is light", "clipId": "density" },
+    { "title": "The rings", "clipId": "rings-still" }
+  ],
+  "narration": { "mode": "tts", "voice": "onyx" },
+  "facts": [
+    { "claim": "Saturn's mean density is 687 kg per cubic metre; water is 1,000", "source": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/saturnfact.html" },
+    { "claim": "Saturn's rings are made mostly of water ice", "source": "https://www.jpl.nasa.gov/edu/pdfs/ss_saturn.pdf" }
+  ]
+}

@@ -2,6 +2,9 @@ import fs from "fs";
 import OpenAI from "openai";
 import { toFile } from "openai/uploads";
 import { withRetry } from "./retry";
+import { OllamaError, ollamaGenerate } from "./providers/ollama";
+import { generateWithFallback, isProviderFailure } from "./textFallback";
+import { readTextSettings, type TextProviderId } from "./text/settings";
 
 const TEXT_MODEL = process.env.OPENAI_TEXT_MODEL || "gpt-4.1";
 const IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-2";
@@ -18,8 +21,12 @@ function getClient(): OpenAI {
   return client;
 }
 
-/** Runs one text generation step. `system` sets the role/task, `user` is the actual instruction. */
-export async function generateText(system: string, user: string): Promise<string> {
+/** Shared client for modules that need other OpenAI endpoints (speech, transcription). */
+export function getOpenAIClient(): OpenAI {
+  return getClient();
+}
+
+async function openaiText(system: string, user: string): Promise<string> {
   const response = await withRetry(() =>
     getClient().chat.completions.create({
       model: TEXT_MODEL,
@@ -29,7 +36,6 @@ export async function generateText(system: string, user: string): Promise<string
       ],
     })
   );
-
   const content = response.choices[0]?.message?.content;
   if (!content) {
     throw new Error("OpenAI text generation returned no content");
@@ -37,13 +43,56 @@ export async function generateText(system: string, user: string): Promise<string
   return content.trim();
 }
 
+/** Runs the text step on one specific model, with no fallback (used by the Settings test button). */
+export async function generateTextVia(provider: TextProviderId, system: string, user: string): Promise<string> {
+  return provider === "ollama" ? ollamaGenerate(system, user) : openaiText(system, user);
+}
+
+const LABEL: Record<TextProviderId, string> = { ollama: "Ollama", openai: "OpenAI" };
+
+/**
+ * Runs one text generation step. `system` sets the role/task, `user` is the actual instruction.
+ * The model chosen in Settings (default: Ollama) goes first. If it fails and "fall back" is on, the other one (OpenAI or
+ * Ollama) is tried; if that fails too, Claude or Gemini is used when a key for one is set (see textFallback.ts).
+ */
+export async function generateText(system: string, user: string): Promise<string> {
+  const s = readTextSettings();
+  const primary = s.provider;
+  const secondary: TextProviderId = primary === "ollama" ? "openai" : "ollama";
+  const failures: { id: TextProviderId; err: any }[] = [];
+  for (const id of s.fallback ? [primary, secondary] : [primary]) {
+    // OpenAI as the standby is only worth trying when a key exists.
+    if (id === "openai" && id !== primary && !process.env.OPENAI_API_KEY) continue;
+    try {
+      return await generateTextVia(id, system, user);
+    } catch (err) {
+      failures.push({ id, err });
+      if (id === primary && s.fallback) console.warn(`${LABEL[id]} text generation failed (${(err as Error)?.message}); trying ${LABEL[secondary]}.`);
+    }
+  }
+  // Everything configured failed. Claude or Gemini can still help when the failure was the provider's, not the prompt's.
+  if (failures.some((f) => f.err instanceof OllamaError || isProviderFailure(f.err))) {
+    try {
+      const fb = await generateWithFallback(system, user, (m) => console.warn(m));
+      if (fb) return fb.text;
+    } catch {
+      /* the provider errors below are the useful ones */
+    }
+  }
+  if (failures.length === 1) throw failures[0].err;
+  throw Object.assign(new Error(failures.map((f) => `${LABEL[f.id]}: ${(f.err as Error)?.message ?? f.err}`).join(" | ")), { status: failures[0].err?.status });
+}
+
 /** Generates a standalone image (used for the character reference shot). Returns PNG bytes. */
-export async function generateImage(prompt: string): Promise<Buffer> {
+export async function generateImage(
+  prompt: string,
+  size: "1024x1024" | "1024x1536" | "1536x1024" = "1024x1024"
+): Promise<Buffer> {
   const response = await withRetry(() =>
     getClient().images.generate({
       model: IMAGE_MODEL,
       prompt,
-      size: "1024x1024",
+      size,
     })
   );
 
@@ -60,21 +109,23 @@ export async function generateImage(prompt: string): Promise<Buffer> {
  */
 export async function generateImageWithReference(
   prompt: string,
-  referenceImagePath: string
+  /** One reference image, or several (for example a planet and a place that must both appear). */
+  referenceImagePath: string | string[],
+  size: "1024x1024" | "1024x1536" | "1536x1024" = "1024x1024"
 ): Promise<Buffer> {
+  const paths = (Array.isArray(referenceImagePath) ? referenceImagePath : [referenceImagePath]).slice(0, 4);
+  if (paths.length === 0) throw new Error("generateImageWithReference needs at least one reference image");
   const response = await withRetry(async () => {
-    // Re-read the reference file on every attempt: a stream can only be consumed once,
-    // so a retried call needs a fresh one.
-    const referenceFile = await toFile(
-      fs.createReadStream(referenceImagePath),
-      "reference.png",
-      { type: "image/png" }
+    // Re-read the reference files on every attempt: a stream can only be consumed once,
+    // so a retried call needs fresh ones.
+    const files = await Promise.all(
+      paths.map((p, i) => toFile(fs.createReadStream(p), `reference-${i + 1}.png`, { type: "image/png" }))
     );
     return getClient().images.edit({
       model: IMAGE_MODEL,
-      image: referenceFile,
+      image: files.length === 1 ? files[0] : files,
       prompt,
-      size: "1024x1024",
+      size,
     });
   });
 

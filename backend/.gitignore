@@ -2,6 +2,18 @@ node_modules/
 dist/
 storage/generated/*
 !storage/generated/.gitkeep
+storage/shorts/
+storage/secrets/
+storage/browser-profile/
+storage/veoframe-test/
+storage/logs/
+storage/hooks/
 .env
 .env.*
+!.env.example
 *.log
+
+# machine-specific runtime settings and test cache
+.vitest/
+storage/*-settings.json
+storage/flux-jobs.json

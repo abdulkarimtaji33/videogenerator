@@ -2,15 +2,18 @@
 
 import { useEffect, useState } from "react";
 import type { Shot } from "@/types";
-import { imageUrl, updateShotDuration, regenerateShotImage, ApiError } from "@/lib/api";
+import { imageUrl, updateShotDuration, regenerateShotImage, generateShotVideo, ApiError } from "@/lib/api";
 import { copyToClipboard } from "@/lib/clipboard";
 import StatusBadge from "./StatusBadge";
 import CopyableBlock from "./CopyableBlock";
+import { LinkBadge, roleLabel } from "./NichePanels";
 
 const BUSY_STATUSES = new Set(["image_prompt", "image", "video"]);
 const MIN_DURATION_SECONDS = 1;
 const MAX_DURATION_SECONDS = 30;
 const MAX_IMAGE_REGENERATIONS = 2;
+
+import ProviderBadge from "@/components/ProviderBadge";
 
 export default function ShotCard({ projectId, shot }: { projectId: number; shot: Shot }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -19,6 +22,7 @@ export default function ShotCard({ projectId, shot }: { projectId: number; shot:
   const [durationError, setDurationError] = useState<string | null>(null);
   const [imageStarting, setImageStarting] = useState(false);
   const [imageActionError, setImageActionError] = useState<string | null>(null);
+  const [videoStarting, setVideoStarting] = useState(false);
 
   const isBusy = BUSY_STATUSES.has(shot.status) || imageStarting;
   const isUpdatingDuration = shot.status === "video_prompt" || pendingDuration !== null;
@@ -41,11 +45,29 @@ export default function ShotCard({ projectId, shot }: { projectId: number; shot:
     }
   }, [shot.status, imageStarting]);
 
+  // The clip render takes minutes: stay "starting" until the server flips the shot to video, then until it has a clip.
+  useEffect(() => {
+    if (videoStarting && (shot.status === "video" || shot.video_path || shot.status === "error")) {
+      setVideoStarting(false);
+    }
+  }, [shot.status, shot.video_path, videoStarting]);
+
   async function handleCopyVideoPrompt() {
     if (!shot.video_prompt) return;
     const ok = await copyToClipboard(shot.video_prompt);
     setVideoPromptCopyState(ok ? "copied" : "failed");
     setTimeout(() => setVideoPromptCopyState("idle"), 1500);
+  }
+
+  async function handleGenerateVideo() {
+    setImageActionError(null);
+    setVideoStarting(true);
+    try {
+      await generateShotVideo(projectId, shot.id);
+    } catch (err) {
+      setImageActionError(err instanceof ApiError ? err.message : "Failed to start clip generation.");
+      setVideoStarting(false);
+    }
   }
 
   async function handleRegenerateImage() {
@@ -86,21 +108,22 @@ export default function ShotCard({ projectId, shot }: { projectId: number; shot:
       <div className="relative">
         {shot.video_path ? (
           <video
-            className="aspect-square w-full bg-surface-muted object-cover"
+            className="aspect-[3/4] w-full bg-surface-muted object-cover"
             src={imageUrl(shot.video_path)}
             poster={shot.image_path ? imageUrl(shot.image_path) : undefined}
+            preload="none"
             controls
             loop
           />
         ) : shot.image_path ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            className="aspect-square w-full bg-surface-muted object-cover"
+            className="aspect-[3/4] w-full bg-surface-muted object-cover"
             src={imageUrl(shot.image_path)}
             alt={shot.title || `Shot ${shot.shot_number}`}
           />
         ) : (
-          <div className="flex aspect-square w-full flex-col items-center justify-center gap-2 bg-surface-muted text-muted-foreground">
+          <div className="flex aspect-[3/4] w-full flex-col items-center justify-center gap-2 bg-surface-muted text-muted-foreground">
             {shot.status === "error" ? (
               <span className="text-xs">Image generation failed</span>
             ) : (
@@ -111,6 +134,7 @@ export default function ShotCard({ projectId, shot }: { projectId: number; shot:
             )}
           </div>
         )}
+        {!shot.video_path && shot.image_path && <ProviderBadge provider={shot.imageProviderUsed} ms={shot.imageMs} position="bl" />}
         <span className="pointer-events-none absolute left-3 top-3 flex h-7 min-w-7 items-center justify-center rounded-md bg-background/80 px-1.5 font-[family-name:var(--font-display)] text-[13px] font-semibold tabular-nums text-foreground shadow-sm backdrop-blur-sm">
           {String(shot.shot_number).padStart(2, "0")}
         </span>
@@ -127,9 +151,34 @@ export default function ShotCard({ projectId, shot }: { projectId: number; shot:
           <StatusBadge status={shot.status} />
         </div>
 
+        {(shot.beat_role || shot.link || (shot.anchor_keys && shot.anchor_keys.length > 0) || shot.continues_previous) && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {shot.beat_role && <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent">{roleLabel(shot.beat_role)}</span>}
+            <LinkBadge link={shot.link} />
+            {shot.continues_previous ? <span className="rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">continues</span> : null}
+            {(shot.anchor_keys || []).map((k) => (
+              <span key={k} className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+                {k}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {shot.narration_fits === 0 || shot.narration_fits === false ? (
+          <p className="mt-2 rounded-lg border border-danger/30 bg-danger-soft px-2.5 py-1.5 text-xs text-danger">
+            Narration may not fit in {displayedDuration}s. Shorten the line or lengthen the clip.
+          </p>
+        ) : null}
+
         {shot.voiceover && (
           <p className="mt-2 border-l-2 border-border pl-2.5 text-sm italic leading-relaxed text-muted-foreground">
+            {shot.speaker && shot.speaker !== "narrator" ? <span className="mr-1 not-italic font-semibold text-foreground">{shot.speaker}:</span> : null}
             &ldquo;{shot.voiceover}&rdquo;
+          </p>
+        )}
+        {shot.caption_text && (
+          <p className="mt-1 pl-2.5 text-xs leading-relaxed text-muted-foreground">
+            Captions: <span className="font-medium uppercase text-foreground">{shot.caption_text}</span>
           </p>
         )}
 
@@ -256,14 +305,15 @@ export default function ShotCard({ projectId, shot }: { projectId: number; shot:
             </button>
           )}
 
-          {showGenerateVideo && (
+          {(showGenerateVideo || shot.status === "video") && (
             <button
               type="button"
-              disabled
-              title="Video generation is coming soon"
-              className="w-full min-h-[38px] cursor-not-allowed rounded-lg bg-accent/50 py-2.5 text-xs font-semibold text-accent-foreground opacity-70"
+              onClick={handleGenerateVideo}
+              disabled={isBusy || videoStarting}
+              title="Generates this clip on Veoframe, using the shot image as the first frame"
+              className="w-full min-h-[38px] rounded-lg bg-accent py-2.5 text-xs font-semibold text-accent-foreground transition-all hover:opacity-90 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100"
             >
-              Generate video (coming soon)
+              {videoStarting || shot.status === "video" ? "Generating clip on Veoframe..." : "Generate clip"}
             </button>
           )}
         </div>

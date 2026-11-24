@@ -1,0 +1,35 @@
+{
+  "id": "sample-urdu-short",
+  "niche": "south_asian_history",
+  "topic": "Sample: the drainage system of Mohenjo-daro (needs a native speaker's review before use)",
+  "title": "موہنجو داڑو کی نالیاں",
+  "language": "ur",
+  "flow": "google-flow",
+  "targetSeconds": 16,
+  "hook": {
+    "type": "curiosity_gap",
+    "line": "موہنجو داڑو میں ہر گھر کی نالی مرکزی نالی سے جڑی تھی۔",
+    "visual": "An ancient brick street with a narrow covered drain running along it, in warm low sunlight with dust in the air."
+  },
+  "styleBible": "Photoreal cinematic historical documentary look, warm low sunlight, fine dust in the air, shallow depth of field, vertical 9:16 framing.",
+  "clips": [
+    {
+      "id": "street",
+      "seconds": 8,
+      "purpose": "hook",
+      "narration": "موہنجو داڑو میں ہر گھر کی نالی مرکزی نالی سے جڑی تھی۔",
+      "prompt": "Photoreal cinematic historical documentary look, warm low sunlight, fine dust in the air, shallow depth of field, vertical 9:16 framing. An ancient fired-brick street with a narrow covered drain running along its edge, rows of brick walls on both sides, a slow haze of dust in warm low sunlight. Slow dolly forward along the drain. Audio: soft wind and distant ambient sound, no speech, no music. No text, no logos, no watermarks."
+    },
+    {
+      "id": "age",
+      "seconds": 8,
+      "purpose": "payoff",
+      "narration": "یہ شہر تقریباً ساڑھے چار ہزار سال پرانا ہے، مگر اس کا نظام حیران کن حد تک منظم تھا۔",
+      "prompt": "Photoreal cinematic historical documentary look, warm low sunlight, fine dust in the air, shallow depth of field, vertical 9:16 framing. A wide view of the weathered brick ruins of an ancient planned city at golden hour, straight lanes crossing at right angles, long shadows over the old bricks. Slow aerial pull-back over the ruins. Audio: gentle wind and distant birds, no speech, no music. No text, no logos, no watermarks."
+    }
+  ],
+  "narration": { "mode": "tts", "voice": "onyx", "instructions": "Speak clearly in natural Urdu with a calm documentary tone and measured pace." },
+  "facts": [{ "claim": "Mohenjo-daro's houses were connected to a street drainage system, and the city dates to about 2500 BCE", "source": "https://whc.unesco.org/en/list/138/" }],
+  "description": "موہنجو داڑو کی نالیوں کا نظام۔ ماخذ: یونیسکو عالمی ورثہ۔",
+  "tags": ["موہنجو داڑو", "تاریخ", "وادی سندھ"]
+}

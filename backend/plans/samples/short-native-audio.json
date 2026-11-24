@@ -1,0 +1,33 @@
+{
+  "id": "sample-native-audio",
+  "niche": "space_science_curiosity",
+  "topic": "Sample: a Short where the video model speaks the lines itself",
+  "title": "Sample native audio Short",
+  "flow": "google-flow",
+  "targetSeconds": 24,
+  "hook": {
+    "type": "pattern_interrupt",
+    "line": "The robot janitor forgot something.",
+    "visual": "A small yellow cleaning robot stands in the middle of a vast empty space station hall under cold blue light."
+  },
+  "styleBible": "Stylised 3D animation look, warm practical lights against cold blue shadows, soft film grain, vertical 9:16 framing.",
+  "clips": [
+    {
+      "id": "line-1",
+      "seconds": 8,
+      "purpose": "hook with dialogue",
+      "narration": "The robot janitor forgot something.",
+      "prompt": "Stylised 3D animation look, warm practical lights against cold blue shadows, soft film grain, vertical 9:16 framing. A small yellow cleaning robot stands in the middle of a vast empty space station hall under cold blue light, looking at a mop in its claw. Slow push-in on the robot. The robot says in a gentle mechanical voice: \"I cleaned everything, but I forgot the floor.\" Audio: the robot's voice, soft hum of the station, no music. No text, no logos, no watermarks."
+    },
+    {
+      "id": "line-2",
+      "seconds": 8,
+      "purpose": "twist",
+      "narration": "Nobody told it the floor was missing.",
+      "prompt": "Stylised 3D animation look, warm practical lights against cold blue shadows, soft film grain, vertical 9:16 framing. The small yellow cleaning robot looks down through a gap in the hall where the floor is missing, stars drifting far below. Slow tilt down following its gaze. The robot says in the same gentle mechanical voice: \"Maybe the floor left first.\" Audio: the robot's voice, soft hum of the station, no music. No text, no logos, no watermarks."
+    }
+  ],
+  "narration": { "mode": "veo-native" },
+  "ambientGain": 1,
+  "facts": [{ "claim": "This is a fiction sample with no factual claims", "source": "n/a" }]
+}

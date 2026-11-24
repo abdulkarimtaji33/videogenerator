@@ -1,12 +1,14 @@
 import "dotenv/config";
-import express, { NextFunction, Request, Response } from "express";
-import cors from "cors";
-import { projectsRouter } from "./routes/projects";
-import { imagesRouter } from "./routes/images";
-import { AppError } from "./errors";
+import path from "path";
+import { createApp } from "./app";
+import { loadConfig } from "./config";
 import { getPool } from "./db";
+import "./jobs/handlers";
+import { startWorker } from "./jobs/worker";
+import { logger } from "./log";
 
-const REQUIRED_ENV_VARS = ["OPENAI_API_KEY", "MYSQL_HOST", "MYSQL_USER", "MYSQL_DATABASE"];
+// OPENAI_API_KEY is optional now: Ollama writes the text by default (OpenAI is the standby and the optional image/speech model).
+const REQUIRED_ENV_VARS = ["MYSQL_HOST", "MYSQL_USER", "MYSQL_DATABASE"];
 
 function validateEnv() {
   const missing = REQUIRED_ENV_VARS.filter((key) => !process.env[key]);
@@ -23,52 +25,40 @@ async function verifyDatabaseConnection() {
     await getPool().query("SELECT 1");
     console.log("Database connection OK.");
   } catch (err) {
-    console.error(
-      "Could not connect to MySQL on startup. Check MYSQL_HOST/PORT/USER/PASSWORD/DATABASE in backend/.env " +
-        "and that the schema has been applied with `npm run db:init`."
-    );
+    console.error("Could not connect to MySQL on startup. Check MYSQL_* in backend/.env.");
     console.error(err);
   }
 }
 
 async function main() {
   validateEnv();
+  const cfg = loadConfig();
 
-  const app = express();
-  const PORT = Number(process.env.PORT || 4000);
-
-  // No auth/cookies/session anywhere in this API — reflecting any origin back is harmless here
-  // and permanently removes CORS as a source of "can't reach the backend" errors, from any origin/port.
-  app.use(cors({ origin: true }));
-  app.use(express.json({ limit: "1mb" }));
-
-  app.get("/health", (_req, res) => res.json({ ok: true }));
-  app.use("/api/projects", projectsRouter);
-  app.use("/api/images", imagesRouter);
-
-  // 404 for any unmatched route.
-  app.use((_req, res) => {
-    res.status(404).json({ error: "not found" });
-  });
-
-  // Central error handler. Must be registered last, and must have 4 args for
-  // Express to recognize it as an error middleware.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-    if (err instanceof AppError) {
-      return res.status(err.statusCode).json({ error: err.message });
-    }
-
-    console.error("Unhandled error while processing request:", err);
-    const message = err instanceof Error ? err.message : "Internal server error";
-    res.status(500).json({ error: message });
-  });
-
+  // Apply any pending migrations, then start the persistent job worker (it also resumes interrupted jobs).
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { migrate } = require(path.join(process.cwd(), "scripts", "migrate.js"));
+    const m = await migrate();
+    if (m.applied.length) logger.info("migrations applied", { applied: m.applied });
+  } catch (err) {
+    logger.error("migration failed", { error: err instanceof Error ? err.message : String(err) });
+  }
   await verifyDatabaseConnection();
+  const worker = await startWorker({ concurrency: cfg.JOB_CONCURRENCY, pollMs: cfg.JOB_POLL_MS });
 
-  app.listen(PORT, () => {
-    console.log(`Backend listening on http://localhost:${PORT}`);
+  const app = createApp();
+  const server = app.listen(cfg.PORT, () => {
+    console.log(`Backend listening on http://localhost:${cfg.PORT}`);
   });
+
+  const shutdown = async () => {
+    logger.info("shutting down");
+    server.close();
+    await worker.stop();
+    process.exit(0);
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 }
 
 process.on("unhandledRejection", (reason) => {
