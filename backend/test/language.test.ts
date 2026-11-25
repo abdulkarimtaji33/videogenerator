@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { localizeScript, cleanRoman, MAX_SPOKEN_WORDS } from "../src/script/localize";
-import { narratorVoice, voiceFor } from "../src/providers/voices";
+import { localizeScript, cleanRoman, maxSpokenWords, romanLooksEnglish } from "../src/script/localize";
+import { castGenders, castVoices, narratorVoice, voiceFor } from "../src/providers/voices";
 import { planFromProject } from "../src/projectVideo";
 import { anchorImagePrompt, shotImagePrompt } from "../src/prompts";
 import { pickProfile } from "../src/niche/profiles";
@@ -34,6 +34,12 @@ describe("Roman captions", () => {
   it("keeps plain lowercase letters, drops accents and symbols", () => {
     expect(cleanRoman("  Aap  ko pata hai?  Kyā ‘haan’ ✓ ")).toBe("aap ko pata hai? kya 'haan'");
   });
+
+  it("notices when the Roman line is really the English line", () => {
+    expect(romanLooksEnglish("one robot never moves again because pari found the key.", "One robot never moves again because Pari found the key.")).toBe(true);
+    expect(romanLooksEnglish("pari ne chaabi dhoondh li", "Pari found the key")).toBe(false);
+    expect(romanLooksEnglish("darwaza khol raha hai", "The door is opening")).toBe(false);
+  });
 });
 
 describe("voices", () => {
@@ -41,10 +47,26 @@ describe("voices", () => {
     const chars = ["ali", "sara"];
     expect(voiceFor("ur", "narrator", chars)).toBe(narratorVoice("ur"));
     expect(voiceFor("ur", "ali", chars)).not.toBe(voiceFor("ur", "sara", chars));
-    expect(voiceFor("ur", "ali", chars)).not.toBe(narratorVoice("ur"));
     expect(voiceFor("ur", "unknown-key", chars)).toBe(narratorVoice("ur"));
     expect(voiceFor("hi", "sara", chars)).toMatch(/^hi-IN-/);
     expect(narratorVoice("ur")).toMatch(/^ur-/);
+  });
+
+  it("follows the character's gender: a girl as the first character gets the female voice", () => {
+    const cast = [{ key: "hana", gender: "female" as const }, { key: "kuro", gender: "male" as const }];
+    expect(castGenders(cast)).toEqual({ hana: "female", kuro: "male" });
+    expect(castVoices("ur", cast).hana).toBe("ur-PK-UzmaNeural");
+    expect(castVoices("ur", cast).kuro).toBe("ur-IN-SalmanNeural");
+    expect(castVoices("hi", cast).hana).toBe("hi-IN-SwaraNeural");
+  });
+
+  it("without genders the first character is male and the next female", () => {
+    expect(castGenders(["a", "b", "c"])).toEqual({ a: "male", b: "female", c: "male" });
+  });
+
+  it("uses a different voice for two characters of the same gender", () => {
+    const v = castVoices("ur", [{ key: "a", gender: "female" }, { key: "b", gender: "female" }]);
+    expect(v.a).not.toBe(v.b);
   });
 });
 
@@ -70,18 +92,45 @@ describe("localizeScript", () => {
     expect(out.shots[0].narration).toBe("English line 1"); // the English source is kept
   });
 
+  it("tells the model each character's gender and gives worked examples", async () => {
+    let sys = "";
+    const ask = async (s: string) => {
+      sys = s;
+      return JSON.stringify({ lines: [1, 2, 3].map((i) => ({ index: i, speaker: "narrator", text: "ایک دو تین", roman: "aik do teen" })) });
+    };
+    await localizeScript(script(), brief({ anchors: [{ key: "hana", kind: "character", name: "Hana", lockedFeatures: "x", needsReference: true, gender: "female" }] }), "ur", ask);
+    expect(sys).toMatch(/hana \(Hana, female/);
+    expect(sys).toMatch(/Examples of the style/);
+    expect(sys).toMatch(/at most 17 words/i);
+  });
+
   it("asks again when the Roman line has a different word count, and keeps the repaired line", async () => {
     let calls = 0;
     const ask = async () => {
       calls++;
       if (calls === 1)
-        return JSON.stringify({ lines: [1, 2, 3].map((i) => ({ index: i, speaker: "narrator", text: "ek do teen", roman: i === 2 ? "ek do" : "ek do teen" })) });
-      return JSON.stringify({ lines: [{ index: 2, speaker: "narrator", text: "ek do teen", roman: "ek do teen" }] });
+        return JSON.stringify({ lines: [1, 2, 3].map((i) => ({ index: i, speaker: "narrator", text: "एक दो तीन", roman: i === 2 ? "ek do" : "ek do teen" })) });
+      return JSON.stringify({ lines: [{ index: 2, speaker: "narrator", text: "एक दो तीन", roman: "ek do teen" }] });
     };
     const out = await localizeScript(script(), brief({ anchors: [] }), "hi", ask);
     expect(calls).toBe(2);
     expect(out.shots[1].roman).toBe("ek do teen");
-    expect(MAX_SPOKEN_WORDS).toBeGreaterThan(10);
+  });
+
+  it("asks again when the Roman line is just the English line", async () => {
+    let calls = 0;
+    const ask = async () => {
+      calls++;
+      if (calls === 1) return JSON.stringify({ lines: [1, 2, 3].map((i) => ({ index: i, speaker: "narrator", text: "ایک دو تین چار", roman: i === 1 ? "english line one" : "ek do teen char" })) });
+      return JSON.stringify({ lines: [{ index: 1, speaker: "narrator", text: "ایک دو تین چار", roman: "ek do teen char" }] });
+    };
+    const out = await localizeScript(script(), brief({ anchors: [] }), "ur", ask);
+    expect(calls).toBe(2);
+    expect(out.shots[0].roman).toBe("ek do teen char");
+  });
+
+  it("gives Hindi a lower word limit than Urdu (it is spoken more slowly)", () => {
+    expect(maxSpokenWords("hi")).toBeLessThan(maxSpokenWords("ur"));
   });
 
   it("gives up with a clear error when the model never returns usable JSON", async () => {
@@ -103,6 +152,13 @@ describe("assembly plan for an Urdu video", () => {
     expect(plan.clips[1].voice).toBe(voiceFor("ur", "sara", ["ali", "sara"]));
     expect(plan.narration.voice).toBe(narratorVoice("ur"));
     expect(plan.language).toBe("en"); // captions are Roman letters, so the Latin caption font is used
+  });
+
+  it("gives a female character the female voice even when she is the first character", () => {
+    const b = brief({ anchors: [{ key: "hana", kind: "character", name: "Hana", lockedFeatures: "x", needsReference: true, gender: "female" }] });
+    const project = { id: 9, format: "short", language: "ur", niche: "anime_story", idea_prompt: "anime", chosen_title: "Hana aur Kuro", brief_json: JSON.stringify(b) };
+    const shots = [1, 2].map((n) => ({ shot_number: n, title: "t", duration_seconds: 8, voiceover: "ایک", caption_text: "aik", speaker: "hana", video_prompt: "x".repeat(50), image_prompt: "y" }));
+    expect(planFromProject(project, shots).clips[0].voice).toBe("ur-PK-UzmaNeural");
   });
 
   it("leaves English projects exactly as before", () => {

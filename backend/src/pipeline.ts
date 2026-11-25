@@ -240,7 +240,7 @@ export async function runShotVideo(projectId: number, shotId: number): Promise<v
       runDir: projectDir(projectId),
     }, { automaticOnly: true });
     const videoPath = path.relative(STORAGE_ROOT, clip.file).replace(/\\/g, "/");
-    await query("UPDATE shots SET video_path = ?, provider = ?, status = 'done' WHERE id = ?", [videoPath, clip.provider, shotId]);
+    await query("UPDATE shots SET video_path = ?, provider = ?, status = 'done', error_message = NULL WHERE id = ?", [videoPath, clip.provider, shotId]);
   } catch (err: any) {
     await markShotError(shotId, friendlyError("Video generation failed", err));
     throw err;

@@ -7,7 +7,7 @@
 
 import type { AnchorSpec, CreativeBrief, NicheProfile, Script, ScriptShot, VerifiedFact, VideoFormat } from "./niche/types";
 
-const JSON_ONLY = "Reply with ONLY valid JSON (no markdown fences, no commentary).";
+const JSON_ONLY = "Reply with ONLY valid JSON (no markdown fences, no commentary). Never put a double quote character inside a string value (use single quotes), and never leave a trailing comma.";
 
 /** Step 1: what the video is about, what recurs visually, and the shared look. */
 export function briefPrompt(args: { idea: string; profile: NicheProfile; format: VideoFormat; lengthSeconds: number }) {
@@ -16,7 +16,8 @@ export function briefPrompt(args: { idea: string; profile: NicheProfile; format:
     system: [
       "You are the creative director of a faceless YouTube channel made with AI video and a synthetic narrator.",
       "Turn the idea into a creative brief. " + JSON_ONLY,
-      'Shape: {"promise": string, "audience": string, "subjectMode": "subject"|"place"|"character"|"cast"|"mixed"|"none", "anchors": [{"key": string, "kind": "character"|"subject"|"place"|"object", "name": string, "lockedFeatures": string, "needsReference": boolean}], "styleBible": string, "tone": string, "avoid": string[]}',
+      'Shape: {"promise": string, "audience": string, "subjectMode": "subject"|"place"|"character"|"cast"|"mixed"|"none", "anchors": [{"key": string, "kind": "character"|"subject"|"place"|"object", "name": string, "lockedFeatures": string, "needsReference": boolean, "gender": "male"|"female"|"neutral"}], "styleBible": string, "tone": string, "avoid": string[]}',
+      "- gender: only for 'character' anchors: the gender of the voice that speaks as that character (male, female or neutral). It picks the voice and the grammar of translated lines, so be explicit: a girl or a female robot is 'female'.",
       "Rules:",
       "- promise: ONE sentence the video must deliver, specific (a named subject plus a surprise or stake). Never a topic label.",
       "- anchors are the things that RECUR visually across shots and must look identical every time. Use 0-4. A video about a planet has the planet as a 'subject' anchor and NO person. Only add a 'character' or 'cast' anchor when the idea is genuinely about people or a story with characters. A history video usually anchors 'place' and 'object', never realistic human faces. Use zero anchors when nothing recurs (a pure list of unrelated visuals).",

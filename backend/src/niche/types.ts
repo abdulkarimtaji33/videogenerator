@@ -19,6 +19,8 @@ export interface AnchorSpec {
   lockedFeatures: string;
   /** False for an anchor that needs no reference image (e.g. a generic ocean). */
   needsReference: boolean;
+  /** Characters only: the gender of the voice that speaks as them (picks the voice and the grammar of Urdu and Hindi lines). */
+  gender?: "male" | "female" | "neutral";
 }
 
 export interface CreativeBrief {

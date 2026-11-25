@@ -46,6 +46,16 @@ The model was installed on a real Ollama on the VPS (Ubuntu 24.04, 2 vCPU, 7.8 G
 - **`qwen3.5:4b` works.** `npm run check:text` through the real code path: a JSON answer in 15 s (includes loading the model) and a correct Urdu translation with a word-for-word Roman line in 10 s.
 - The 4B is a clear step down in writing quality from the 27B, and the script still goes through the same checks (hook lint, fact check, script review, narration fitting), which is what keeps weak output from reaching a video. If a plan fails with "did not return valid JSON", try `qwen3.5:9b` on a bigger machine.
 
+## What went wrong on the small server, and the fixes
+Two real videos planned at once on the 2-core, 7.8 GB server failed with "Ollama sent nothing for 20 minutes". The server log showed three causes, all fixed:
+1. **The inference engine keeps a RAM cache of earlier prompts** (1.35 GB after a few calls). With Ollama capped at 5 GB, the kernel throttled it and a 936-token prompt did not finish in 20 minutes. Fix on the server: `LLAMA_ARG_CACHE_RAM=0`, flash attention and an 8-bit key-value cache, the model unloaded after 5 idle minutes, soft limit 5.7 GB and hard limit 6 GB (the production apps are unaffected: no out-of-memory kills, sites answered 200 throughout).
+2. **Two requests at once**: the second waited without any data and its idle timer ran out. Fix in the app: text calls to Ollama now run one at a time (`serial()` in `providers/ollama.ts`), so the timer only starts when a request really starts.
+3. **The model's default presence penalty of 1.5** (visible in the log) hurts JSON. The app now sends `presence_penalty: 0`.
+
+After the fixes the real creative-brief prompt returned valid JSON in 81 s, and a whole plan (brief, facts, hooks, SEO, script, review, translation) takes roughly 25-40 minutes per project on this server.
+
+A 4B model also writes slightly broken JSON now and then (for example a missing comma at one position), which failed the anime project once. The app now repairs JSON before giving up (`src/jsonLoose.ts`, the `jsonrepair` package: missing or trailing commas, a double quote inside a sentence, a cut-off reply, text around the JSON), asks up to three times, and tells the model not to put double quotes inside strings.
+
 ## Switching, fallback, and where to change it
 Settings page, "Text model (writing)": choose Ollama or OpenAI, pick or type any Ollama tag, turn the standby on or off, test. The same values can be set in `backend/.env` (`TEXT_PROVIDER`, `OLLAMA_URL`, `OLLAMA_MODEL`, `OLLAMA_THINK`, `OLLAMA_NUM_CTX`, `TEXT_FALLBACK_TO_OTHER`); the saved Settings (`backend/storage/text-settings.json`) win. Order of attempts: chosen model, then the other one (if the standby is on, and for OpenAI only if a key is set), then Claude or Gemini if a key is set (`textFallback.ts`).
 

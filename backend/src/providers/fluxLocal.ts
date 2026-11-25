@@ -7,8 +7,10 @@ import { createHash } from "crypto";
 import fs from "fs";
 import http from "http";
 import https from "https";
+import os from "os";
 import path from "path";
 import { readImageSettings, writeImageSettings } from "../images/settings";
+import { ff } from "../shorts/ffmpeg";
 import type { ImageProvider, ProviderStatus } from "./types";
 
 let busy: Promise<unknown> = Promise.resolve();
@@ -182,6 +184,38 @@ async function renderSync(base: string, prompt: string, width: number, height: n
   return b64;
 }
 
+const refCache = new Map<string, Buffer>();
+
+/**
+ * A reference only needs the render's resolution, so it is shrunk to fit it (never enlarged) before it is sent: the pipeline
+ * stores anchors at 1024x1536, and sending that is wasteful. NOTE: measured on this PC, shot images with references took about
+ * 16 minutes both before and after this (against 8.6 minutes without references), so sd-server evidently resizes references
+ * itself; this only makes the request smaller. The real cost is the references themselves (each adds about one render's worth
+ * of image tokens), so fewer references per shot is what would make shots faster. When the file is not an image ffmpeg can
+ * read, the original bytes are sent unchanged.
+ */
+export async function fitReference(file: string, width: number, height: number): Promise<Buffer> {
+  const original = fs.readFileSync(file);
+  const st = fs.statSync(file);
+  const key = `${file}|${st.size}|${st.mtimeMs}|${width}x${height}`;
+  const hit = refCache.get(key);
+  if (hit) return hit;
+  let out = original;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fluxref-"));
+  try {
+    const dst = path.join(dir, "ref.png");
+    await ff(["-i", file, "-vf", `scale=w=min(iw\\,${width}):h=min(ih\\,${height}):force_original_aspect_ratio=decrease:force_divisible_by=16`, "-frames:v", "1", dst]);
+    const small = fs.readFileSync(dst);
+    if (small.length > 0) out = small;
+  } catch {
+    out = original;
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  refCache.set(key, out);
+  return out;
+}
+
 export const fluxLocal: ImageProvider = {
   id: "flux-local",
   label: "FLUX (self-hosted)",
@@ -197,7 +231,7 @@ export const fluxLocal: ImageProvider = {
       const started = Date.now();
       const refs = req.referenceImages?.length ? req.referenceImages : req.referenceImage ? [req.referenceImage] : [];
       // Reference images (anchors, up to 10) are sent as base64 `ref_images`; FLUX.3 Klein conditions on them.
-      const refB64 = refs.filter((p) => fs.existsSync(p)).slice(0, 10).map((p) => fs.readFileSync(p).toString("base64"));
+      const refB64 = (await Promise.all(refs.filter((p) => fs.existsSync(p)).slice(0, 10).map((p) => fitReference(p, width, height)))).map((b) => b.toString("base64"));
       const body: Record<string, unknown> = {
         prompt: req.prompt,
         width,

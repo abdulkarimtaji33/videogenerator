@@ -45,7 +45,18 @@ export async function narrate(storageRoot: string, plan: ShortPlan, opts: Narrat
       continue;
     }
     fs.rmSync(`${mp3}.words.json`, { force: true }); // a stale timing file from another voice must never be reused
-    await provider.synthesize({ text: c.narration, outFile: mp3, voice: c.voice || plan.narration.voice, model: plan.narration.model, instructions: plan.narration.instructions, speed: plan.narration.speed });
+    const say = (speed: number) => provider.synthesize({ text: c.narration, outFile: mp3, voice: c.voice || plan.narration.voice, model: plan.narration.model, instructions: plan.narration.instructions, speed });
+    await say(plan.narration.speed);
+    // A line that is too long for its shot (voices differ in pace: one Urdu voice is about 25% slower than another) is spoken
+    // again a little faster, up to 1.3x, instead of running into the next shot.
+    const first = (await probe(mp3)).duration;
+    if (first > room && room > 0) {
+      const faster = Math.min(1.3, plan.narration.speed * (first / room) * 1.04);
+      if (faster > plan.narration.speed + 0.02) {
+        fs.rmSync(`${mp3}.words.json`, { force: true });
+        await say(Math.round(faster * 100) / 100);
+      }
+    }
     // Edge voices come with exact word timings (no OpenAI call); other voices are transcribed with Whisper.
     let heard: Word[] | null = null;
     if (!opts.transcribe) {

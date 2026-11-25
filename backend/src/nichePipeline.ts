@@ -20,7 +20,8 @@ import { anchorImagePrompt, briefPrompt, buildVideoPrompt, expandBeatsPrompt, ou
 import { reviewAndFixScript } from "./script/review";
 import { parseSeo, seoCheck, seoPrompt } from "./seo/seo";
 import { mapWithConcurrency } from "./concurrency";
-import { MAX_SPOKEN_WORDS, localizeScript } from "./script/localize";
+import { localizeScript, maxSpokenWords } from "./script/localize";
+import { parseJsonLoose } from "./jsonLoose";
 import { isLanguage, type LanguageId } from "./providers/voices";
 
 const SHOT_SECONDS = 8;
@@ -34,13 +35,13 @@ type Ask = (system: string, user: string) => Promise<string>;
 // ---------- JSON helpers ----------
 
 function parseJson(raw: string): unknown {
-  return JSON.parse(raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim());
+  return parseJsonLoose(raw);
 }
 
-/** Calls the model and parses its JSON; on a parse or schema failure retries once, telling the model what was wrong. */
+/** Calls the model and parses its JSON (repairing small mistakes); on a parse or schema failure asks again, telling the model what was wrong. */
 export async function jsonStep<T>(ask: Ask, system: string, user: string, schema: z.ZodType<T>): Promise<T> {
   let lastError = "";
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     const raw = await ask(system, attempt === 0 ? user : `${user}\n\nYour previous reply was invalid (${lastError}). Reply again with ONLY the corrected JSON.`);
     try {
       return schema.parse(parseJson(raw));
@@ -57,6 +58,7 @@ const AnchorSchema = z.object({
   name: z.string().min(1),
   lockedFeatures: z.string().default(""),
   needsReference: z.boolean().default(true),
+  gender: z.enum(["male", "female", "neutral"]).nullish().transform((v) => v ?? undefined),
 });
 
 const BriefSchema = z.object({
@@ -433,7 +435,7 @@ export async function runNichePipeline(projectId: number): Promise<void> {
       }
       // Same limit as fitNarration (about 2.4 words a second, measured, with a short pause at the start of each shot).
       const spoken = s.spoken || s.narration;
-      const fits = s.spoken ? wordCount(s.spoken) <= MAX_SPOKEN_WORDS : wordCount(s.narration) <= MAX_SHOT_WORDS;
+      const fits = s.spoken ? wordCount(s.spoken) <= maxSpokenWords(language) : wordCount(s.narration) <= MAX_SHOT_WORDS;
       const r = await query<any>(
         `INSERT INTO shots (project_id, shot_number, title, description, voiceover, image_prompt, video_prompt, duration_seconds, status,
            beat_role, beat_index, anchor_keys, continues_previous, link, narration_fits, caption_text, narration_en, speaker)

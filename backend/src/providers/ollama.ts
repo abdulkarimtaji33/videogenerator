@@ -122,8 +122,24 @@ function chatOnce(body: Record<string, unknown>): Promise<ChatResult> {
   });
 }
 
+let busy: Promise<unknown> = Promise.resolve();
+/**
+ * One generation at a time. A small server has one model slot: a second request would wait without any data and its idle
+ * timer would run out while the first one is still being written (two projects at once did exactly that). Queueing here
+ * means the idle timer starts only when a request really starts.
+ */
+function serial<T>(fn: () => Promise<T>): Promise<T> {
+  const run = busy.then(fn, fn);
+  busy = run.catch(() => undefined);
+  return run;
+}
+
 /** One writing step: system + user message in, plain text out. */
-export async function ollamaGenerate(system: string, user: string): Promise<string> {
+export function ollamaGenerate(system: string, user: string): Promise<string> {
+  return serial(() => generateNow(system, user));
+}
+
+async function generateNow(system: string, user: string): Promise<string> {
   const s = readTextSettings();
   const body: Record<string, unknown> = {
     model: s.ollamaModel,
@@ -133,9 +149,11 @@ export async function ollamaGenerate(system: string, user: string): Promise<stri
     ],
     stream: true,
     think: s.ollamaThink,
-    keep_alive: "30m",
-    // Qwen's recommended non-thinking sampling (model card): temperature 0.7, top_p 0.8, top_k 20.
-    options: { num_ctx: s.ollamaNumCtx, temperature: s.ollamaTemperature, top_p: 0.8, top_k: 20, num_predict: s.ollamaThink ? 32768 : 8192 },
+    // Unload soon after a run so a small shared server gets its memory back between steps.
+    keep_alive: "10m",
+    // Qwen's recommended non-thinking sampling (model card): temperature 0.7, top_p 0.8, top_k 20. The model's built-in
+    // default presence penalty (1.5) fights the repeated quotes and keys of JSON, so it is switched off explicitly.
+    options: { num_ctx: s.ollamaNumCtx, temperature: s.ollamaTemperature, top_p: 0.8, top_k: 20, presence_penalty: 0, repeat_penalty: 1.0, num_predict: s.ollamaThink ? 32768 : 8192 },
   };
   let r: ChatResult;
   try {

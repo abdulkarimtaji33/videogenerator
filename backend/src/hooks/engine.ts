@@ -5,6 +5,7 @@
 import fs from "fs";
 import path from "path";
 import { generateText } from "../openai";
+import { parseJsonLoose } from "../jsonLoose";
 import { HOOK_TYPES, HookFormat, HookType, templatesFor } from "./library";
 import { HookReport, lintHook } from "./lint";
 
@@ -124,8 +125,7 @@ function userPrompt(ctx: HookContext): string {
 }
 
 function parseCandidates(raw: string): HookCandidate[] {
-  const cleaned = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-  const arr = JSON.parse(cleaned);
+  const arr = parseJsonLoose(raw);
   if (!Array.isArray(arr)) throw new Error("Hook generator did not return an array");
   const known = new Set(Object.keys(HOOK_TYPES));
   return arr
@@ -151,8 +151,8 @@ export async function factCheckHooks(cands: HookCandidate[], facts: string[]): P
   let verdicts: { i: number; supported: boolean; reason?: string }[] | null = null;
   try {
     const raw = await generateText("You are a strict fact checker. Reply with only JSON.", prompt);
-    const arr = JSON.parse(raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim());
-    if (Array.isArray(arr)) verdicts = arr;
+    const arr = parseJsonLoose(raw);
+    if (Array.isArray(arr)) verdicts = arr as { i: number; supported: boolean; reason?: string }[];
   } catch {
     verdicts = null;
   }

@@ -2,12 +2,12 @@
 // confirms (failing closed: if the check cannot be read, nothing is kept as verified). No web search is used (owner's
 // decision); sources are the well-known references the model names.
 import { generateText } from "./openai";
+import { parseJsonLoose } from "./jsonLoose";
 import { factVerifyPrompt, factsPrompt } from "./prompts";
 import type { CreativeBrief, NicheProfile, VerifiedFact } from "./niche/types";
 
 function parseArray(raw: string): any[] {
-  const cleaned = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-  const v = JSON.parse(cleaned);
+  const v = parseJsonLoose(raw);
   if (!Array.isArray(v)) throw new Error("expected a JSON array");
   return v;
 }

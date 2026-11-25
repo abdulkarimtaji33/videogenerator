@@ -48,7 +48,9 @@ export function planFromProject(project: any, shots: any[]): ShortPlan {
   if (!long && shots.length > 8) throw new Error("A Short can have at most 8 shots. Reduce the shot count or make a long video.");
   // Urdu and Hindi: the spoken line is in the language's script, captions use its Roman words, and each speaker has a voice.
   const lang: LanguageId = isLanguage(project.language) ? project.language : "en";
-  const characters = (json<{ anchors?: { key: string; kind: string }[] }>(project.brief_json)?.anchors ?? []).filter((a) => a.kind === "character").map((a) => a.key);
+  const characters = (json<{ anchors?: { key: string; kind: string; gender?: "male" | "female" | "neutral" }[] }>(project.brief_json)?.anchors ?? [])
+    .filter((a) => a.kind === "character")
+    .map((a) => ({ key: a.key, gender: a.gender }));
   const clips = shots.map((s) => ({
     id: `shot-${s.shot_number}`,
     type: "ai_video" as const,
@@ -163,6 +165,28 @@ export function editPlanFor(project: any, shots: any[], plan: ShortPlan, workDir
   return critiqueEditPlan(built);
 }
 
+/** A failure that is the network's fault and likely to pass: a reset or timed-out connection, a name that did not resolve. */
+export const isTransientNetworkError = (e: unknown): boolean =>
+  /ERR_CONNECTION_(RESET|CLOSED|REFUSED|TIMED_OUT)|ERR_NETWORK|ERR_INTERNET_DISCONNECTED|ERR_NAME_NOT_RESOLVED|ERR_TIMED_OUT|ERR_PROXY|ERR_TUNNEL|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ECONNREFUSED|socket hang up|fetch failed|Timeout \d+ms exceeded/i.test(
+    e instanceof Error ? e.message : String(e)
+  );
+
+/** Waits (seconds) between tries of a step that failed on the network: about 28 minutes in all. */
+export const NETWORK_WAITS_S = [30, 60, 120, 240, 480, 600, 600];
+
+/** Runs a step and, when it fails because the network blinked, waits and tries again instead of failing the whole video. */
+export async function retryTransient<T>(fn: () => Promise<T>, onWait: (attempt: number, waitS: number, err: unknown) => void = () => {}, waits: number[] = NETWORK_WAITS_S, sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms))): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (!isTransientNetworkError(e) || attempt >= waits.length) throw e;
+      onWait(attempt + 1, waits[attempt], e);
+      await sleep(waits[attempt] * 1000);
+    }
+  }
+}
+
 export async function runProjectVideo(projectId: number): Promise<{ file: string; qaPassed: boolean }> {
   try {
     const [project] = await query<any[]>("SELECT * FROM projects WHERE id = ?", [projectId]);
@@ -178,7 +202,10 @@ export async function runProjectVideo(projectId: number): Promise<{ file: string
     for (const shot of shots) {
       if (shot.video_path && fs.existsSync(path.join(STORAGE_ROOT, shot.video_path))) continue;
       await setStage(projectId, `clip ${shot.shot_number} of ${shots.length}`);
-      await runShotVideo(projectId, shot.id);
+      await retryTransient(
+        () => runShotVideo(projectId, shot.id),
+        (attempt, waitS, err) => logger.warn("clip step hit a network error; waiting before trying again", { projectId, shot: shot.shot_number, attempt, waitS, error: String((err as Error)?.message ?? err).slice(0, 160) })
+      );
     }
 
     shots = await query<any[]>("SELECT * FROM shots WHERE project_id = ? ORDER BY shot_number", [projectId]);
