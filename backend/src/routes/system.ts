@@ -11,7 +11,7 @@ import { rankNiches } from "../niche/scorer";
 import { makeImage } from "../images";
 import { generateTextVia } from "../openai";
 import { ollamaHealth } from "../providers/ollama";
-import { RECOMMENDED_OLLAMA_MODELS, readTextSettings, writeTextSettings } from "../text/settings";
+import { GEMINI_THINKING_LEVELS, RECOMMENDED_GEMINI_MODELS, RECOMMENDED_OLLAMA_MODELS, TEXT_PROVIDER_IDS, readTextSettings, writeTextSettings, type TextProviderId } from "../text/settings";
 import { readImageSettings, writeImageSettings } from "../images/settings";
 import { CLIP_PROVIDERS, IMAGE_PROVIDERS, listProviders } from "../providers";
 import { fluxHealth } from "../providers/fluxLocal";
@@ -106,18 +106,21 @@ systemRouter.post(
   })
 );
 
-// Text model (writing): Ollama by default, OpenAI as the other choice and as the standby.
+// Text model (writing): Gemini by default; OpenAI and Ollama are the other choices and the standbys. Keys are never returned.
 async function textStatus() {
   const s = readTextSettings();
   const o = await ollamaHealth();
   const openaiConfigured = !!process.env.OPENAI_API_KEY;
+  const geminiConfigured = !!process.env.GEMINI_API_KEY;
   return {
     provider: s.provider,
     fallback: s.fallback,
     providers: [
-      { id: "ollama", label: `Ollama (${s.ollamaModel})`, configured: true, online: o.online && o.modelInstalled, detail: o.online ? o.detail : `Ollama is not reachable (${o.detail}). Install it from ollama.com and run it.` },
+      { id: "gemini", label: `Gemini (${s.geminiModel})`, configured: geminiConfigured, detail: geminiConfigured ? undefined : "GEMINI_API_KEY is not set in backend/.env." },
       { id: "openai", label: `OpenAI (${process.env.OPENAI_TEXT_MODEL || "gpt-4.1"})`, configured: openaiConfigured, detail: openaiConfigured ? undefined : "OPENAI_API_KEY is not set in backend/.env." },
+      { id: "ollama", label: `Ollama (${s.ollamaModel})`, configured: true, online: o.online && o.modelInstalled, detail: o.online ? o.detail : `Ollama is not reachable (${o.detail}). Install it from ollama.com and run it.` },
     ],
+    gemini: { model: s.geminiModel, thinking: s.geminiThinking, thinkingLevels: GEMINI_THINKING_LEVELS, recommended: RECOMMENDED_GEMINI_MODELS },
     ollama: { url: s.ollamaUrl, model: s.ollamaModel, think: s.ollamaThink, numCtx: s.ollamaNumCtx, temperature: s.ollamaTemperature, installed: o.installed, recommended: RECOMMENDED_OLLAMA_MODELS },
   };
 }
@@ -125,7 +128,9 @@ async function textStatus() {
 systemRouter.get("/text", asyncHandler(async (_req, res) => res.json(await textStatus())));
 
 const TextSettingsPatch = z.object({
-  provider: z.enum(["ollama", "openai"]).optional(),
+  provider: z.enum(["gemini", "ollama", "openai"]).optional(),
+  geminiModel: z.string().trim().regex(/^[A-Za-z0-9._-]{2,80}$/, "a Gemini model id such as gemini-2.5-pro").optional(),
+  geminiThinking: z.enum(GEMINI_THINKING_LEVELS).optional(),
   fallback: z.boolean().optional(),
   ollamaUrl: z.string().url().optional(),
   ollamaModel: z.string().trim().min(1).max(120).optional(),
@@ -148,11 +153,12 @@ systemRouter.post(
   "/text/test",
   asyncHandler(async (req, res) => {
     const s = readTextSettings();
-    const provider = req.body?.provider === "openai" ? "openai" : req.body?.provider === "ollama" ? "ollama" : s.provider;
+    const provider = (TEXT_PROVIDER_IDS as string[]).includes(req.body?.provider) ? (req.body.provider as TextProviderId) : s.provider;
     const started = Date.now();
     try {
       const text = await generateTextVia(provider, "You are a terse assistant. Reply with ONLY valid JSON.", 'Return {"ok": true, "word": "ready"}.');
-      res.json({ ok: true, provider, model: provider === "ollama" ? s.ollamaModel : process.env.OPENAI_TEXT_MODEL || "gpt-4.1", ms: Date.now() - started, sample: text.slice(0, 200) });
+      const model = provider === "ollama" ? s.ollamaModel : provider === "gemini" ? s.geminiModel : process.env.OPENAI_TEXT_MODEL || "gpt-4.1";
+      res.json({ ok: true, provider, model, ms: Date.now() - started, sample: text.slice(0, 200) });
     } catch (e: any) {
       res.json({ ok: false, provider, ms: Date.now() - started, error: String(e?.message || e).slice(0, 400) });
     }

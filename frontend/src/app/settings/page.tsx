@@ -55,7 +55,9 @@ export default function SettingsPage() {
   }
 
   const text = useLoad(() => fetchTextStatus());
-  const [txtProvider, setTxtProvider] = useState("ollama");
+  const [txtProvider, setTxtProvider] = useState("gemini");
+  const [geminiModel, setGeminiModel] = useState("");
+  const [geminiThinking, setGeminiThinking] = useState("minimal");
   const [txtFallback, setTxtFallback] = useState(true);
   const [ollamaUrl, setOllamaUrl] = useState("");
   const [ollamaModel, setOllamaModel] = useState("");
@@ -68,6 +70,8 @@ export default function SettingsPage() {
   useEffect(() => {
     if (text.data) {
       setTxtProvider(text.data.provider);
+      setGeminiModel(text.data.gemini?.model ?? "");
+      setGeminiThinking(text.data.gemini?.thinking ?? "minimal");
       setTxtFallback(text.data.fallback);
       setOllamaUrl(text.data.ollama.url);
       setOllamaModel(text.data.ollama.model);
@@ -79,7 +83,7 @@ export default function SettingsPage() {
   async function saveText() {
     setTxtMsg(null);
     try {
-      await saveTextSettings({ provider: txtProvider, fallback: txtFallback, ollamaUrl, ollamaModel, ollamaThink, ollamaNumCtx: ollamaCtx });
+      await saveTextSettings({ provider: txtProvider, geminiModel, geminiThinking, fallback: txtFallback, ollamaUrl, ollamaModel, ollamaThink, ollamaNumCtx: ollamaCtx });
       setTxtMsg("Saved.");
       await text.reload();
     } catch (e: any) {
@@ -92,7 +96,7 @@ export default function SettingsPage() {
     setTxtResult(null);
     try {
       // Save first so the test runs on what is on screen.
-      await saveTextSettings({ provider: txtProvider, fallback: txtFallback, ollamaUrl, ollamaModel, ollamaThink, ollamaNumCtx: ollamaCtx });
+      await saveTextSettings({ provider: txtProvider, geminiModel, geminiThinking, fallback: txtFallback, ollamaUrl, ollamaModel, ollamaThink, ollamaNumCtx: ollamaCtx });
       setTxtResult(await testTextProvider(txtProvider));
       await text.reload();
     } catch (e: any) {
@@ -166,7 +170,8 @@ export default function SettingsPage() {
 
       <Card title="Text model (writing)" right={<Button onClick={saveText}>Save</Button>}>
         <p className="mb-3 text-sm text-muted-foreground">
-          Writes the brief, facts, hooks, SEO, script and review. Ollama runs on this PC for free; OpenAI is the paid alternative.
+          Writes the brief, facts, hooks, SEO, script, review and the Urdu/Hindi translation. Gemini is the default; OpenAI and Ollama are the other choices
+          and stand in when the first one fails. API keys are set in backend/.env, never here.
         </p>
         <ErrorNote error={text.error} />
         <div className="grid gap-4 sm:grid-cols-2">
@@ -177,11 +182,26 @@ export default function SettingsPage() {
               ))}
             </select>
           </Field>
-          <Field label="If it fails, try the other one" hint="Ollama and OpenAI stand in for each other. Off = never use the other.">
+          <Field label="If it fails, try the others" hint="Gemini, OpenAI and Ollama stand in for each other (only those that are set up). Off = never use another.">
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={txtFallback} onChange={(e) => setTxtFallback(e.target.checked)} />
               {txtFallback ? "On" : "Off"}
             </label>
+          </Field>
+          <Field label="Gemini thinking" hint="How long Gemini thinks before answering. Minimal is fastest and right for writing.">
+            <select className={inputCls} value={geminiThinking} onChange={(e) => setGeminiThinking(e.target.value)}>
+              {(text.data?.gemini?.thinkingLevels ?? ["minimal", "low", "medium", "high"]).map((l) => (
+                <option key={l} value={l}>{l}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Gemini model" hint="Gemini 3.5 Flash-Lite is the default; 3.8 Flash is the stronger choice (often busy on a free key). If one is busy, the other is used.">
+            <input className={inputCls} list="gemini-models" value={geminiModel} onChange={(e) => setGeminiModel(e.target.value)} placeholder="gemini-3.5-flash-lite" />
+            <datalist id="gemini-models">
+              {(text.data?.gemini?.recommended ?? []).map((r) => (
+                <option key={r.id} value={r.id}>{r.note}</option>
+              ))}
+            </datalist>
           </Field>
           <Field label="Ollama model" hint="Pick an installed or recommended model, or type any Ollama tag.">
             <input className={inputCls} list="ollama-models" value={ollamaModel} onChange={(e) => setOllamaModel(e.target.value)} placeholder="qwen3.8:27b" />
@@ -207,7 +227,7 @@ export default function SettingsPage() {
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {text.data?.providers?.map((p) => (
             <Badge key={p.id} tone={!p.configured ? "neutral" : p.online === false ? "error" : "ok"} >
-              {p.id === "ollama" ? "Ollama" : "OpenAI"}: {!p.configured ? "not configured" : p.online === false ? "not ready" : p.online ? "ready" : "key set"}
+              {p.id === "gemini" ? "Gemini" : p.id === "ollama" ? "Ollama" : "OpenAI"}: {!p.configured ? "not configured" : p.online === false ? "not ready" : p.online ? "ready" : "key set"}
             </Badge>
           ))}
         </div>

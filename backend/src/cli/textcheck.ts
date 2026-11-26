@@ -9,8 +9,8 @@ import { briefPrompt } from "../prompts";
 
 async function main() {
   const s = readTextSettings();
-  const provider = process.argv[2] === "openai" ? "openai" : process.argv[2] === "ollama" ? "ollama" : s.provider;
-  console.log("settings:", JSON.stringify({ provider, ollamaUrl: s.ollamaUrl, model: s.ollamaModel, think: s.ollamaThink, numCtx: s.ollamaNumCtx }));
+  const provider = (["openai", "ollama", "gemini"] as const).find((p) => p === process.argv[2]) ?? s.provider;
+  console.log("settings:", JSON.stringify(provider === "gemini" ? { provider, model: s.geminiModel, thinking: s.geminiThinking, keySet: !!process.env.GEMINI_API_KEY } : { provider, ollamaUrl: s.ollamaUrl, model: s.ollamaModel, think: s.ollamaThink, numCtx: s.ollamaNumCtx }));
   if (provider === "ollama") console.log("health:", JSON.stringify(await ollamaHealth(8000)));
   const tests: [string, string, string][] = [
     ["json", "You are a terse assistant. Reply with ONLY valid JSON, no markdown.", 'Return {"ok": true, "word": "ready", "n": 3}.'],

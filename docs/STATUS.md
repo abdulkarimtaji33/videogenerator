@@ -38,6 +38,10 @@ Checked live on three niches (space, Roman history, robot series): the right anc
 - OpenAI key is no longer required to start the backend.
 - Fixes: resume after an interrupted plan now keeps finished shot images (the job handler no longer deletes shot rows first); port defaults changed to 4501 in config and the frontend.
 
+## Updated 2026-11-26: Gemini is the default text model
+- All text steps (brief, facts, hooks, SEO, script, review, Urdu/Hindi translation) now go to **Gemini** first (`gemini-3.5-flash-lite`, minimal thinking; `gemini-3.8-flash` choosable), with a model chain and fallbacks to OpenAI, Ollama and Claude. Details and the real test results (free-tier key: Pro has no quota, 2.5 family gone, 3.8 Flash often busy): `docs/Text-Models.md`. The key is in `backend/.env` only.
+- Not yet done with Gemini: a full plan-only project and a new video. Projects 13 (finished, `storage/shorts/project-13/final/project-13.mp4`) and 14 (video failed on a corrupt clip file, `moov atom not found`) were made earlier with Ollama and hand-written Urdu.
+
 ## Updated 2026-11-25 (later): Ollama on the server, Urdu/Hindi, anime
 - **Ollama runs on the VPS** (Ubuntu, 2 vCPU, 7.8 GB, no GPU), bound to localhost, limited to 6 GB and a low CPU priority so the production apps are safe. The app reaches it through an SSH tunnel (`npm run ollama:tunnel`, `OLLAMA_SSH` in `.env`, address `http://127.0.0.1:11435` in Settings). Real findings are in `docs/Text-Models.md`: `qwen3.8:27b` cannot load there; `qwen3.5:4b` works and is the saved model. Memory tuning and the "sent nothing for 20 minutes" failure are documented there too.
 - **Urdu and Hindi** (`docs/Urdu-Hindi.md`): English script, then localization to spoken Urdu/Hindi plus Roman captions and a speaker per line; Edge neural voices tested for real (ur-PK-Asad/Uzma, ur-IN-Salman, hi-IN-Madhur/Swara) and Edge reports one timing per word; characters get voices by gender; a line that is too long is spoken faster (up to 1.3x). Hindi limit 14 words a shot, Urdu 17.

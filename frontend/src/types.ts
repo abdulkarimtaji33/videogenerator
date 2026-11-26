@@ -188,8 +188,10 @@ export interface ImageSystemStatus {
   flux: { url: string; model: string; steps: number; lastMs?: number | null };
 }
 
+export type TextProviderId = "gemini" | "ollama" | "openai";
+
 export interface TextProviderStatus {
-  id: "ollama" | "openai";
+  id: TextProviderId;
   label: string;
   configured: boolean;
   online?: boolean;
@@ -197,9 +199,10 @@ export interface TextProviderStatus {
 }
 
 export interface TextSystemStatus {
-  provider: "ollama" | "openai";
+  provider: TextProviderId;
   fallback: boolean;
   providers: TextProviderStatus[];
+  gemini: { model: string; thinking: string; thinkingLevels: string[]; recommended: { id: string; note: string }[] };
   ollama: {
     url: string;
     model: string;

@@ -1,4 +1,25 @@
-# Text model: Ollama by default, OpenAI as the other choice
+# Text model: Gemini by default (2026-11-26); Ollama and OpenAI are the other choices and the standbys
+
+**Current default: Gemini** (`gemini-3.5-flash-lite`, thinking minimal), with `gemini-3.8-flash` as the choosable stronger model (the owner first picked 3.8 Flash as default, then switched to Flash-Lite after seeing the test results below); the key lives in `backend/.env` as `GEMINI_API_KEY` (never in the settings file or git). Settings page -> "Text model (writing)": model, thinking level, test button. Everything below this section is the earlier Ollama research, which still applies to the Ollama option.
+
+### What the real Gemini API did with this key (tested 2026-11-26, not mocked)
+It is a **free-tier** key. Measured:
+- `gemini-3.5-flash-lite`: answered every request in about 1 s. The creative-brief prompt: valid JSON in 2-3 s. The Urdu translation of a 6-shot two-character script: 8 s, natural Urdu, 1 of 6 lines with a Roman word-count mismatch (an Urdu two-word verb written as one Roman word; captions fall back to spreading by length).
+- `gemini-3.8-flash`: reachable but **overloaded** at test time: 503 "high demand" twice (once after 58 s) and two timeouts at 45 s. It may be fine at other times.
+- `gemini-3-flash-preview`: 200 in 2 s. `gemini-3.5/3.6/3.7-flash`: 503 "high demand". `gemma-4-31b-it`: 503.
+- **Pro models** (`gemini-3.1-pro-preview`, `gemini-pro-latest`): 429 with `limit: 0`: no free-tier quota at all.
+- **The 2.5 family** (`gemini-2.5-pro`, `-flash`, `-flash-lite`): 404 "no longer available to new users".
+
+### How the app copes (`src/providers/gemini.ts`)
+- A call tries the chosen model, then `gemini-3.5-flash-lite`, `gemini-3.8-flash`, `gemini-3-flash-preview` (without repeats). A model that is gone (404), has no quota (`limit: 0`), has used its daily quota (retry in hours) or does not answer in 150 s is skipped for a while; 503 and short rate limits are waited out 5 / 15 / 30 s first. A bad key or bad request is reported at once.
+- Thinking is sent as `thinkingLevel: minimal` (the owner asked for little thinking: it takes time); a model that rejects the field is asked again without it.
+- Order when Gemini fails altogether: OpenAI (if a key is set), then Ollama, then Claude (if `ANTHROPIC_API_KEY` is set).
+- Free-tier **daily request limits** apply to Flash models; a heavy day can use one model's quota up, and the chain moves to the next. A paid key removes this.
+- Tools: `npm run check:text -- gemini --brief`, `npx tsx scripts/compare-gemini.ts <model...>` (brief + Urdu quality per model).
+
+---
+
+# (Earlier research) Ollama as the default, OpenAI as the other choice
 
 Researched 2026-11-25. Hardware was deliberately **not** a factor (owner's decision): the question was "which Ollama model is best for this app".
 

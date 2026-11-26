@@ -181,6 +181,8 @@ export function fetchTextStatus(): Promise<TextSystemStatus> {
 
 export function saveTextSettings(body: {
   provider?: string;
+  geminiModel?: string;
+  geminiThinking?: string;
   fallback?: boolean;
   ollamaUrl?: string;
   ollamaModel?: string;

@@ -54,8 +54,9 @@ describe("network blips during the clip step", () => {
     expect(calls).toBe(3);
   });
 
-  it("is patient: about half an hour of waiting in all", () => {
+  it("is patient: hours of waiting in all (a real outage lasted over 35 minutes)", () => {
     const total = NETWORK_WAITS_S.reduce((a, b) => a + b, 0);
-    expect(total).toBeGreaterThanOrEqual(25 * 60);
+    expect(total).toBeGreaterThanOrEqual(3 * 3600);
+    expect(NETWORK_WAITS_S.slice(0, 5)).toEqual([30, 60, 120, 240, 480]); // quick at first, for a short blip
   });
 });

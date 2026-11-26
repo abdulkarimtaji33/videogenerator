@@ -171,8 +171,11 @@ export const isTransientNetworkError = (e: unknown): boolean =>
     e instanceof Error ? e.message : String(e)
   );
 
-/** Waits (seconds) between tries of a step that failed on the network: about 28 minutes in all. */
-export const NETWORK_WAITS_S = [30, 60, 120, 240, 480, 600, 600];
+/**
+ * Waits (seconds) between tries of a step that failed on the network: 30 s, 1, 2, 4, 8 minutes, then every 10 minutes, about
+ * 4 hours in all. A real outage on this PC lasted over 35 minutes while nobody was there, and a shorter wait failed the video.
+ */
+export const NETWORK_WAITS_S = [30, 60, 120, 240, 480, ...Array.from({ length: 22 }, () => 600)];
 
 /** Runs a step and, when it fails because the network blinked, waits and tries again instead of failing the whole video. */
 export async function retryTransient<T>(fn: () => Promise<T>, onWait: (attempt: number, waitS: number, err: unknown) => void = () => {}, waits: number[] = NETWORK_WAITS_S, sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms))): Promise<T> {

@@ -2,9 +2,10 @@ import fs from "fs";
 import OpenAI from "openai";
 import { toFile } from "openai/uploads";
 import { withRetry } from "./retry";
+import { GeminiError, geminiGenerate } from "./providers/gemini";
 import { OllamaError, ollamaGenerate } from "./providers/ollama";
 import { generateWithFallback, isProviderFailure } from "./textFallback";
-import { readTextSettings, type TextProviderId } from "./text/settings";
+import { FALLBACK_QUALITY_ORDER, readTextSettings, type TextProviderId } from "./text/settings";
 
 const TEXT_MODEL = process.env.OPENAI_TEXT_MODEL || "gpt-4.1";
 const IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-2";
@@ -45,33 +46,37 @@ async function openaiText(system: string, user: string): Promise<string> {
 
 /** Runs the text step on one specific model, with no fallback (used by the Settings test button). */
 export async function generateTextVia(provider: TextProviderId, system: string, user: string): Promise<string> {
+  if (provider === "gemini") return geminiGenerate(system, user);
   return provider === "ollama" ? ollamaGenerate(system, user) : openaiText(system, user);
 }
 
-const LABEL: Record<TextProviderId, string> = { ollama: "Ollama", openai: "OpenAI" };
+const LABEL: Record<TextProviderId, string> = { gemini: "Gemini", ollama: "Ollama", openai: "OpenAI" };
+
+/** A model that is not the first choice is only worth trying when it is set up (a key exists); Ollama is tried if it answers. */
+const standbyReady = (id: TextProviderId): boolean => (id === "gemini" ? !!process.env.GEMINI_API_KEY : id === "openai" ? !!process.env.OPENAI_API_KEY : true);
 
 /**
  * Runs one text generation step. `system` sets the role/task, `user` is the actual instruction.
- * The model chosen in Settings (default: Ollama) goes first. If it fails and "fall back" is on, the other one (OpenAI or
- * Ollama) is tried; if that fails too, Claude or Gemini is used when a key for one is set (see textFallback.ts).
+ * The model chosen in Settings (default: Gemini) goes first. If it fails and "fall back" is on, the others that are set up
+ * are tried (Gemini, OpenAI, Ollama in that order); if all fail, Claude is used when its key is set (see textFallback.ts).
  */
 export async function generateText(system: string, user: string): Promise<string> {
   const s = readTextSettings();
   const primary = s.provider;
-  const secondary: TextProviderId = primary === "ollama" ? "openai" : "ollama";
+  const order: TextProviderId[] = s.fallback ? [primary, ...FALLBACK_QUALITY_ORDER.filter((id) => id !== primary)] : [primary];
   const failures: { id: TextProviderId; err: any }[] = [];
-  for (const id of s.fallback ? [primary, secondary] : [primary]) {
-    // OpenAI as the standby is only worth trying when a key exists.
-    if (id === "openai" && id !== primary && !process.env.OPENAI_API_KEY) continue;
+  for (const id of order) {
+    if (id !== primary && !standbyReady(id)) continue;
     try {
       return await generateTextVia(id, system, user);
     } catch (err) {
       failures.push({ id, err });
-      if (id === primary && s.fallback) console.warn(`${LABEL[id]} text generation failed (${(err as Error)?.message}); trying ${LABEL[secondary]}.`);
+      const next = order.slice(order.indexOf(id) + 1).find((n) => standbyReady(n));
+      if (next) console.warn(`${LABEL[id]} text generation failed (${(err as Error)?.message}); trying ${LABEL[next]}.`);
     }
   }
-  // Everything configured failed. Claude or Gemini can still help when the failure was the provider's, not the prompt's.
-  if (failures.some((f) => f.err instanceof OllamaError || isProviderFailure(f.err))) {
+  // Everything configured failed. Claude can still help when the failure was the provider's, not the prompt's.
+  if (failures.some((f) => f.err instanceof OllamaError || f.err instanceof GeminiError || isProviderFailure(f.err))) {
     try {
       const fb = await generateWithFallback(system, user, (m) => console.warn(m));
       if (fb) return fb.text;
