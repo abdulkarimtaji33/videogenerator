@@ -10,6 +10,7 @@ import https from "https";
 import os from "os";
 import path from "path";
 import { readImageSettings, writeImageSettings } from "../images/settings";
+import { reachableLookup } from "../net/reachable";
 import { ff } from "../shorts/ffmpeg";
 import type { ImageProvider, ProviderStatus } from "./types";
 
@@ -68,7 +69,9 @@ function requestJson(method: "GET" | "POST", url: string, body: unknown, timeout
   const lib = u.protocol === "https:" ? https : http;
   return new Promise((resolve, reject) => {
     const headers: Record<string, string | number> = payload ? { "Content-Type": "application/json", "Content-Length": payload.length } : {};
-    const req = lib.request({ method, hostname: u.hostname, port: u.port || (u.protocol === "https:" ? 443 : 80), path: u.pathname + u.search, headers }, (res) => {
+    const port = Number(u.port || (u.protocol === "https:" ? 443 : 80));
+    // A tunnel name can resolve to an address this PC cannot reach: connect only over an address that answers (see net/reachable.ts).
+    const req = lib.request({ method, hostname: u.hostname, port, path: u.pathname + u.search, headers, lookup: reachableLookup(port) as any }, (res) => {
       const chunks: Buffer[] = [];
       res.on("data", (c) => chunks.push(c));
       res.on("end", () => {
