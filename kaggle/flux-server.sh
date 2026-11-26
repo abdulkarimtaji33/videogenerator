@@ -48,7 +48,9 @@ if [ ! -x "$BIN" ]; then
   nvcc --version 2>&1 | tail -n 1
   [ -d sd/.git ] || retry 8 git clone --recurse-submodules https://github.com/leejet/stable-diffusion.cpp sd
   cd sd && git checkout -q "$SD_TAG" && retry 8 git submodule update --init --recursive
-  cmake -B build -DSD_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=75 -DCMAKE_BUILD_TYPE=Release > "$W/cmake.log" 2>&1 || { tail -n 25 "$W/cmake.log"; say "cmake failed"; exit 1; }
+  # GGML_CUDA_FA=OFF skips the FlashAttention GPU kernels: they take 40+ minutes to compile on a 2-core Colab machine (measured), the
+  # rest builds in a few minutes, and the image server works without them.
+  cmake -B build -DSD_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=75 -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA_FA=OFF > "$W/cmake.log" 2>&1 || { tail -n 25 "$W/cmake.log"; say "cmake failed"; exit 1; }
   cmake --build build -j"$(nproc)" --target sd-server > "$W/build.log" 2>&1 || { tail -n 30 "$W/build.log"; say "build failed"; exit 1; }
   cd "$W"
   [ -x "$BIN" ] || BIN=$(find "$W/sd/build" -name sd-server -type f | head -n 1)
