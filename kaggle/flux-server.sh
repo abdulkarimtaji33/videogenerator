@@ -14,7 +14,8 @@
 # Nothing in this file is secret.
 
 set -u
-W=/kaggle/working/flux
+# Kaggle keeps its files in /kaggle/working, Google Colab in /content.
+if [ -n "${FLUX_WORKDIR:-}" ]; then W="$FLUX_WORKDIR"; elif [ -d /kaggle/working ]; then W=/kaggle/working/flux; elif [ -d /content ]; then W=/content/flux; else W="$HOME/flux"; fi
 SD_TAG=master-1111-6874e49
 PORT=7860
 mkdir -p "$W/models" && cd "$W" || exit 1

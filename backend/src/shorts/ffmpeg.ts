@@ -1,4 +1,5 @@
 import { spawn } from "child_process";
+import fs from "fs";
 
 // ffmpeg-static / ffprobe-static ship real binaries inside node_modules, so no system install is needed.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -67,4 +68,18 @@ export async function probe(file: string): Promise<ProbeInfo> {
     pixFmt: v?.pix_fmt || "",
     profile: v?.profile || "",
   };
+}
+
+/**
+ * True when the file is a video that can really be read: it exists, is not tiny, ffprobe can open it (a download cut short
+ * has no "moov atom" and fails here) and it has a video stream of at least `minSeconds`. Never throws.
+ */
+export async function isPlayableVideo(file: string, minSeconds = 0.5): Promise<boolean> {
+  try {
+    if (!fs.existsSync(file) || fs.statSync(file).size < 50_000) return false;
+    const info = await probe(file);
+    return info.hasVideo && info.duration >= minSeconds;
+  } catch {
+    return false;
+  }
 }

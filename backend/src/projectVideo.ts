@@ -20,6 +20,7 @@ import { buildEditPlan } from "./edit/director";
 import { critiqueEditPlan } from "./edit/critique";
 import type { EditReview } from "./edit/types";
 import { buildShort, runPaths } from "./shorts/assemble";
+import { isPlayableVideo } from "./shorts/ffmpeg";
 import { narrate } from "./shorts/narrate";
 import { isLanguage, narratorVoice, voiceFor, type LanguageId } from "./providers/voices";
 import { compositeOverlays } from "./edit/hyperframes/composite";
@@ -203,7 +204,9 @@ export async function runProjectVideo(projectId: number): Promise<{ file: string
     planFromProject(project, shots);
 
     for (const shot of shots) {
-      if (shot.video_path && fs.existsSync(path.join(STORAGE_ROOT, shot.video_path))) continue;
+      // A clip file is reused only when it really plays: a download that was cut short (a dropped connection, a restart) leaves
+      // a file that exists but cannot be opened ("moov atom not found"), and the assembly would fail on it.
+      if (shot.video_path && (await isPlayableVideo(path.join(STORAGE_ROOT, shot.video_path)))) continue;
       await setStage(projectId, `clip ${shot.shot_number} of ${shots.length}`);
       await retryTransient(
         () => runShotVideo(projectId, shot.id),

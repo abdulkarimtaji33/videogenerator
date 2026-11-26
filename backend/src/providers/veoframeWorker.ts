@@ -17,7 +17,7 @@ import fs from "fs";
 import path from "path";
 import type { BrowserContext, Page } from "playwright-core";
 import { logger } from "../log";
-import { ff, probe } from "../shorts/ffmpeg";
+import { ff, isPlayableVideo, probe } from "../shorts/ffmpeg";
 
 const BASE = "https://veoframe.com";
 const STUDIO = `${BASE}/user/generate.php`;
@@ -185,9 +185,17 @@ async function waitAndDownload(page: Page, jobId: string, outFile: string, onSta
     if (text.includes("completed") && (await link.first().isVisible().catch(() => false))) {
       fs.mkdirSync(path.dirname(outFile), { recursive: true });
       const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), link.first().click()]);
-      await download.saveAs(outFile);
-      const size = fs.statSync(outFile).size;
-      if (size < 50_000) throw new Error(`Veoframe download looks incomplete (${size} bytes).`);
+      // Saved under a temporary name and moved into place only when it really plays, so a broken download never takes the
+      // clip's real name (and is never reused later).
+      const tmp = `${outFile}.part`;
+      fs.rmSync(tmp, { force: true });
+      await download.saveAs(tmp);
+      const size = fs.statSync(tmp).size;
+      if (size < 50_000 || !(await isPlayableVideo(tmp))) {
+        fs.rmSync(tmp, { force: true });
+        throw new Error(`Veoframe download looks incomplete (${size} bytes, not a playable video).`);
+      }
+      fs.renameSync(tmp, outFile);
       return;
     }
     if (text.includes("failed")) throw new Error("Veoframe reports that the video generation failed (the quota unit is refunded).");
