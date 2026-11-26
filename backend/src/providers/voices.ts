@@ -61,6 +61,22 @@ export function castVoices(lang: LanguageId, cast: (string | CastMember)[]): Rec
   return out;
 }
 
+/**
+ * Which speaker slot a voice id stands for: "narrator", or "male-0", "male-1", "female-0"... (the position in the pool).
+ * Other speech engines (VoiceStudio) have their own voices, so they are chosen per slot, not by the Edge voice name.
+ */
+export function voiceSlot(voice: string): { role: "narrator" | "male" | "female"; slot: string; lang: LanguageId } {
+  const lang = (voice.slice(0, 2).toLowerCase() as LanguageId);
+  const l: LanguageId = isLanguage(lang) ? lang : "en";
+  const pool = POOLS[l];
+  if (voice === pool.narrator || voice === narratorVoice(l)) return { role: "narrator", slot: "narrator", lang: l };
+  const m = pool.male.indexOf(voice);
+  if (m >= 0) return { role: "male", slot: `male-${m}`, lang: l };
+  const f = pool.female.indexOf(voice);
+  if (f >= 0) return { role: "female", slot: `female-${f}`, lang: l };
+  return { role: "narrator", slot: "narrator", lang: l };
+}
+
 /** Voice of a speaker: "narrator" (or an unknown key) gets the narrator voice. */
 export function voiceFor(lang: LanguageId, speaker: string | null | undefined, cast: (string | CastMember)[]): string {
   if (!speaker) return narratorVoice(lang);

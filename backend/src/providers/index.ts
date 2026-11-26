@@ -5,6 +5,8 @@ import { synthesizeSpeech } from "../shorts/tts";
 import { clipOutput, runBrowserJob } from "./browserWorker";
 import { edgeTts } from "./edge";
 import { kokoroTts } from "./kokoro";
+import { voiceStudioTts } from "./voicestudio";
+import { readVoiceSettings } from "../voice/settings";
 import { generateOnVeoframe } from "./veoframeWorker";
 import { falClips, falImages } from "./fal";
 import { fluxLocal } from "./fluxLocal";
@@ -97,11 +99,18 @@ export const openaiTts: TtsProvider = {
   synthesize: (r) => synthesizeSpeech(r.text, r.outFile, { model: r.model, voice: r.voice, instructions: r.instructions, speed: r.speed }),
 };
 
-// Edge voices first (free, natural, same voice every time); Kokoro (offline) and OpenAI are alternatives.
-export const TTS_PROVIDERS: Record<string, TtsProvider> = { [edgeTts.id]: edgeTts, [kokoroTts.id]: kokoroTts, [openaiTts.id]: openaiTts };
+// VoiceStudio (GPU server) is the default speech engine once its address is set; Edge voices (free), Kokoro (offline) and OpenAI are alternatives.
+export const TTS_PROVIDERS: Record<string, TtsProvider> = { [voiceStudioTts.id]: voiceStudioTts, [edgeTts.id]: edgeTts, [kokoroTts.id]: kokoroTts, [openaiTts.id]: openaiTts };
 
-/** Which speech provider narrates videos: set TTS_PROVIDER (edge, kokoro, openai), default edge. */
-export const defaultTtsProvider = () => (process.env.TTS_PROVIDER && TTS_PROVIDERS[process.env.TTS_PROVIDER] ? process.env.TTS_PROVIDER : "edge");
+/**
+ * Which speech provider narrates videos. TTS_PROVIDER in backend/.env wins; otherwise the saved speech settings
+ * (storage/voice-settings.json): VoiceStudio when its address is set, else Edge.
+ */
+export const defaultTtsProvider = () => {
+  if (process.env.TTS_PROVIDER && TTS_PROVIDERS[process.env.TTS_PROVIDER]) return process.env.TTS_PROVIDER;
+  const s = readVoiceSettings();
+  return s.provider === "voicestudio" && s.voicestudioUrl ? "voicestudio" : "edge";
+};
 
 export function getProvider(id: string): ClipProvider {
   const p = CLIP_PROVIDERS[id];

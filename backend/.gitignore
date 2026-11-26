@@ -17,3 +17,4 @@ storage/hooks/
 .vitest/
 storage/*-settings.json
 storage/flux-jobs.json
+storage/bench/
