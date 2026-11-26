@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/studio";
-import { fetchImageStatus, fetchTextStatus, saveImageSettings, saveTextSettings, testImageProvider, testTextProvider } from "@/lib/api";
-import type { ImageTestResult, TextTestResult } from "@/types";
+import { fetchImageStatus, fetchTextStatus, fetchVoiceStatus, saveImageSettings, saveTextSettings, saveVoiceSettings, testImageProvider, testTextProvider, testVoice } from "@/lib/api";
+import type { ImageTestResult, TextTestResult, VoiceTestResult } from "@/types";
 import { Badge, Button, Card, ErrorNote, Field, Page, inputCls, useLoad } from "@/components/ui";
 
 export default function SettingsPage() {
@@ -51,6 +51,45 @@ export default function SettingsPage() {
       setTestResult({ ok: false, provider: imgDefault, ms: 0, error: e.message });
     } finally {
       setTesting(false);
+    }
+  }
+
+  const voice = useLoad(() => fetchVoiceStatus());
+  const [voiceProvider, setVoiceProvider] = useState("edge");
+  const [voiceUrl, setVoiceUrl] = useState("");
+  const [voiceMsg, setVoiceMsg] = useState<string | null>(null);
+  const [voiceTesting, setVoiceTesting] = useState(false);
+  const [voiceResult, setVoiceResult] = useState<VoiceTestResult | null>(null);
+
+  useEffect(() => {
+    if (voice.data) {
+      setVoiceProvider(voice.data.provider);
+      setVoiceUrl(voice.data.url);
+    }
+  }, [voice.data]);
+
+  async function saveVoice() {
+    setVoiceMsg(null);
+    try {
+      await saveVoiceSettings({ provider: voiceProvider, voicestudioUrl: voiceUrl.trim() });
+      setVoiceMsg("Saved.");
+      await voice.reload();
+    } catch (e: any) {
+      setVoiceMsg(e.message);
+    }
+  }
+
+  async function runVoiceTest() {
+    setVoiceTesting(true);
+    setVoiceResult(null);
+    try {
+      await saveVoiceSettings({ provider: voiceProvider, voicestudioUrl: voiceUrl.trim() });
+      setVoiceResult(await testVoice());
+      await voice.reload();
+    } catch (e: any) {
+      setVoiceResult({ ok: false, provider: voiceProvider, ms: 0, error: e.message });
+    } finally {
+      setVoiceTesting(false);
     }
   }
 
@@ -246,6 +285,55 @@ export default function SettingsPage() {
                 <p className="text-sm text-success">{txtResult.model} answered in {(txtResult.ms / 1000).toFixed(1)} s: <code>{txtResult.sample}</code></p>
               ) : (
                 <ErrorNote error={txtResult.error ?? "The test failed."} />
+              )}
+            </div>
+          )}
+        </div>
+      </Card>
+
+      <Card title="Speech (voices)" right={<Button onClick={saveVoice}>Save</Button>}>
+        <p className="mb-3 text-sm text-muted-foreground">
+          Who speaks the narration and the characters. VoiceStudio runs on the GPU server (its address changes whenever that session restarts); the free Microsoft Edge
+          voices are the alternative. The server key is set in backend/.env, never here.
+        </p>
+        <ErrorNote error={voice.error} />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Speech engine">
+            <select className={inputCls} value={voiceProvider} onChange={(e) => setVoiceProvider(e.target.value)}>
+              {(voice.data?.providers ?? []).map((p) => (
+                <option key={p.id} value={p.id}>{p.label}{p.configured ? "" : " (no address)"}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="VoiceStudio address" hint="For example https://xxxx.trycloudflare.com (no trailing slash).">
+            <input className={inputCls} value={voiceUrl} onChange={(e) => setVoiceUrl(e.target.value)} placeholder="https://..." />
+          </Field>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {voice.data?.providers?.map((p) => (
+            <Badge key={p.id} tone={!p.configured ? "neutral" : p.online === false ? "error" : "ok"}>
+              {p.id === "voicestudio" ? "VoiceStudio" : "Edge"}: {!p.configured ? "no address" : p.online === false ? "not ready" : p.online ? "ready" : "free"}
+            </Badge>
+          ))}
+          {voice.data && <Badge tone={voice.data.keySet ? "ok" : "neutral"}>server key: {voice.data.keySet ? "set" : "not set"}</Badge>}
+          {voice.data?.server?.device && <span className="text-xs text-muted-foreground">{voice.data.server.device}, engine {voice.data.server.engine ?? "none loaded"}, {voice.data.server.voices.length} voice(s)</span>}
+        </div>
+        {voice.data?.providers?.filter((p) => p.id === "voicestudio" && p.detail && p.online !== true && p.configured).map((p) => (
+          <p key={p.id} className="mt-2 text-xs text-muted-foreground">{p.detail}</p>
+        ))}
+        {voice.data && voice.data.active !== voice.data.provider && <p className="mt-2 text-xs text-muted-foreground">Videos use &quot;{voice.data.active}&quot; because TTS_PROVIDER is set in backend/.env.</p>}
+        {voiceMsg && <p className="mt-2 text-sm text-muted-foreground">{voiceMsg}</p>}
+        <div className="mt-4 border-t border-border pt-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button variant="ghost" onClick={runVoiceTest} disabled={voiceTesting}>{voiceTesting ? "Testing (the first call can take minutes)..." : "Test speech"}</Button>
+            {voiceTesting && <span className="spinner" />}
+          </div>
+          {voiceResult && (
+            <div className="mt-3" aria-live="polite">
+              {voiceResult.ok ? (
+                <p className="text-sm text-success">{voiceResult.note ?? `Spoke a test sentence (${voiceResult.seconds} s of audio) in ${(voiceResult.ms / 1000).toFixed(1)} s.`}</p>
+              ) : (
+                <ErrorNote error={voiceResult.error ?? "The test failed."} />
               )}
             </div>
           )}

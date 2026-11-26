@@ -1,4 +1,5 @@
 import fs from "fs";
+import os from "os";
 import path from "path";
 import { Router } from "express";
 import { z } from "zod";
@@ -10,6 +11,10 @@ import { getJob, jobStats, listJobs } from "../jobs/queue";
 import { rankNiches } from "../niche/scorer";
 import { makeImage } from "../images";
 import { generateTextVia } from "../openai";
+import { defaultTtsProvider } from "../providers";
+import { synthesizeVoiceStudio, voiceStudioHealth } from "../providers/voicestudio";
+import { probe } from "../shorts/ffmpeg";
+import { readVoiceSettings, writeVoiceSettings } from "../voice/settings";
 import { ollamaHealth } from "../providers/ollama";
 import { GEMINI_THINKING_LEVELS, RECOMMENDED_GEMINI_MODELS, RECOMMENDED_OLLAMA_MODELS, TEXT_PROVIDER_IDS, readTextSettings, writeTextSettings, type TextProviderId } from "../text/settings";
 import { readImageSettings, writeImageSettings } from "../images/settings";
@@ -161,6 +166,63 @@ systemRouter.post(
       res.json({ ok: true, provider, model, ms: Date.now() - started, sample: text.slice(0, 200) });
     } catch (e: any) {
       res.json({ ok: false, provider, ms: Date.now() - started, error: String(e?.message || e).slice(0, 400) });
+    }
+  })
+);
+
+// Speech (narration and character voices): VoiceStudio on the GPU server, or the free Microsoft Edge voices. The key is never returned.
+async function voiceStatus() {
+  const s = readVoiceSettings();
+  const h = s.voicestudioUrl ? await voiceStudioHealth() : null;
+  return {
+    provider: s.provider,
+    active: defaultTtsProvider(),
+    url: s.voicestudioUrl,
+    keySet: !!process.env.VOICESTUDIO_API_KEY,
+    providers: [
+      { id: "voicestudio", label: "VoiceStudio (GPU server)", configured: !!s.voicestudioUrl, online: h ? h.online && h.keyOk !== false : undefined, detail: h ? (h.online ? h.detail : h.detail) : "No VoiceStudio address is set." },
+      { id: "edge", label: "Microsoft Edge voices (free)", configured: true },
+    ],
+    server: h ? { device: h.device ?? null, engine: h.engine ?? null, voices: h.voices } : null,
+    voices: s.voices,
+  };
+}
+
+systemRouter.get("/voice", asyncHandler(async (_req, res) => res.json(await voiceStatus())));
+
+const VoiceSettingsPatch = z.object({
+  provider: z.enum(["voicestudio", "edge"]).optional(),
+  voicestudioUrl: z.union([z.literal(""), z.string().url()]).optional(),
+  voices: z.record(z.string().regex(/^[a-z]+(-\d)?$/), z.string().min(1).max(120)).optional(),
+});
+
+systemRouter.put(
+  "/voice",
+  asyncHandler(async (req, res) => {
+    const p = parseBody(VoiceSettingsPatch, req.body);
+    writeVoiceSettings(Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined)));
+    res.json(await voiceStatus());
+  })
+);
+
+// Makes one short real sentence with the chosen engine (no fallback), so the answer says what really happens, including a licence gate.
+systemRouter.post(
+  "/voice/test",
+  asyncHandler(async (_req, res) => {
+    const started = Date.now();
+    const s = readVoiceSettings();
+    if (s.provider !== "voicestudio") return res.json({ ok: true, provider: "edge", ms: 0, note: "Edge voices are used (nothing to test on a server)." });
+    const h = await voiceStudioHealth();
+    if (!h.online) return res.json({ ok: false, provider: "voicestudio", ms: Date.now() - started, error: h.detail });
+    const file = path.join(os.tmpdir(), `vs-test-${Date.now()}.mp3`);
+    try {
+      await synthesizeVoiceStudio({ text: "This is a short test of the voice.", outFile: file, voice: "en-US-AndrewMultilingualNeural", model: "", instructions: "", speed: 1 });
+      res.json({ ok: true, provider: "voicestudio", ms: Date.now() - started, seconds: Math.round((await probe(file)).duration * 10) / 10 });
+    } catch (e: any) {
+      res.json({ ok: false, provider: "voicestudio", ms: Date.now() - started, error: String(e?.message || e).slice(0, 400) });
+    } finally {
+      fs.rmSync(file, { force: true });
+      fs.rmSync(`${file}.words.json`, { force: true });
     }
   })
 );

@@ -1,4 +1,4 @@
-import type { ImageProviderId, ImageSystemStatus, ImageTestResult, TextSystemStatus, TextTestResult, ProjectWithShots, PublishPrivacy, VeoframeStatus, VideoFormat } from "@/types";
+import type { ImageProviderId, ImageSystemStatus, ImageTestResult, TextSystemStatus, TextTestResult, VoiceSystemStatus, VoiceTestResult, ProjectWithShots, PublishPrivacy, VeoframeStatus, VideoFormat } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4501";
 
@@ -173,6 +173,18 @@ export async function updateShotDuration(projectId: number, shotId: number, dura
   if (!res.ok) {
     throw new ApiError(await parseErrorMessage(res), res.status);
   }
+}
+
+export function fetchVoiceStatus(): Promise<VoiceSystemStatus> {
+  return request<VoiceSystemStatus>("/api/system/voice", "GET");
+}
+
+export function saveVoiceSettings(body: { provider?: string; voicestudioUrl?: string }): Promise<VoiceSystemStatus> {
+  return request<VoiceSystemStatus>("/api/system/voice", "PUT", body);
+}
+
+export function testVoice(): Promise<VoiceTestResult> {
+  return request<VoiceTestResult>("/api/system/voice/test", "POST", {});
 }
 
 export function fetchTextStatus(): Promise<TextSystemStatus> {

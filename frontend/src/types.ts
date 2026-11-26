@@ -214,6 +214,26 @@ export interface TextSystemStatus {
   };
 }
 
+export interface VoiceSystemStatus {
+  provider: "voicestudio" | "edge";
+  /** The engine that will really be used (the .env override or the saved choice). */
+  active: string;
+  url: string;
+  keySet: boolean;
+  providers: { id: "voicestudio" | "edge"; label: string; configured: boolean; online?: boolean; detail?: string }[];
+  server: { device: string | null; engine: string | null; voices: { id: string; name: string }[] } | null;
+  voices: Record<string, string>;
+}
+
+export interface VoiceTestResult {
+  ok: boolean;
+  provider: string;
+  ms: number;
+  seconds?: number;
+  note?: string;
+  error?: string;
+}
+
 export interface TextTestResult {
   ok: boolean;
   provider: string;

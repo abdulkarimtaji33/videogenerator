@@ -4,12 +4,15 @@
 //   POST {url}/elevenlabs/v1/speech-to-text   (multipart: file, model_id)          -> words with start/end
 // The key is sent as xi-api-key and is read from VOICESTUDIO_API_KEY in backend/.env only.
 //
+// All calls go through net/httpx.ts (not fetch): it connects over an address that answers, which a tunnel name needs on this PC.
+//
 // Word timings for the captions: after the speech is made it is transcribed by VoiceStudio itself, which gives a start and end for
 // each spoken word. If that fails, the span of the speech (silence at the start and end removed) is found with ffmpeg and the caption
 // words are spread over it by length. Either way no OpenAI call is needed.
 
 import fs from "fs";
 import { logger } from "../log";
+import { httpx, multipart, type HttpxResponse } from "../net/httpx";
 import { FFMPEG, probe, run } from "../shorts/ffmpeg";
 import { readVoiceSettings } from "../voice/settings";
 import type { TtsProvider, TtsRequest } from "./types";
@@ -37,30 +40,30 @@ const headers = (json: boolean): Record<string, string> => ({
   ...(process.env.VOICESTUDIO_API_KEY ? { "xi-api-key": process.env.VOICESTUDIO_API_KEY } : {}),
 });
 
-async function call(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
-  const ctl = new AbortController();
-  const t = setTimeout(() => ctl.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...init, signal: ctl.signal });
-  } finally {
-    clearTimeout(t);
+/** One request to the server; a stalled or refused connection is retried a few times (the tunnel can blink). */
+async function call(path: string, init: { method?: "GET" | "POST"; headers?: Record<string, string>; body?: string | Buffer }, timeoutMs: number, tries = 3): Promise<HttpxResponse> {
+  let last: unknown;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await httpx(`${base()}${path}`, init, timeoutMs);
+    } catch (e) {
+      last = e;
+      await sleep(1000 * (i + 1));
+    }
   }
+  throw last;
 }
 
-/**
- * Waits until the server answers /health. A tunnel name resolves to a few Cloudflare addresses and some of them are unreachable from
- * this PC (a real case: one of two addresses timed out for Node while curl fell back to the other). Each new lookup can return a
- * different address, so a failed quick check is simply tried again; the working connection is then reused for the real request.
- */
-export async function waitReachable(tries = 12): Promise<void> {
+/** Waits until the server answers /health (a few quick tries; each try may use another address). */
+export async function waitReachable(tries = 8): Promise<void> {
   let last = "";
   for (let i = 0; i < tries; i++) {
     try {
-      const r = await call(`${base()}/health`, { method: "GET" }, 6000);
+      const r = await httpx(`${base()}/health`, { method: "GET" }, 8000);
       if (r.ok) return;
       last = `health answered ${r.status}`;
     } catch (e: any) {
-      last = e?.name === "AbortError" ? "timed out" : String(e?.cause?.code || e?.message || e);
+      last = String(e?.code || e?.message || e);
     }
     await sleep(500);
   }
@@ -83,13 +86,15 @@ export async function speechSpan(file: string): Promise<{ start: number; end: nu
 
 /** Timings VoiceStudio's own transcription gives for the words of the speech (empty when it cannot). */
 async function transcribeWords(file: string, lang: string): Promise<{ word: string; start: number; end: number }[]> {
-  const form = new FormData();
-  form.append("file", new Blob([fs.readFileSync(file)], { type: "audio/mpeg" }), "speech.mp3");
-  form.append("model_id", "scribe_v1");
-  form.append("language_code", lang);
-  const r = await call(`${base()}/elevenlabs/v1/speech-to-text`, { method: "POST", headers: headers(false), body: form }, 120_000);
+  const m = multipart({ model_id: "scribe_v1", language_code: lang }, { name: "file", filename: "speech.mp3", type: "audio/mpeg", data: fs.readFileSync(file) });
+  const r = await call("/elevenlabs/v1/speech-to-text", { method: "POST", headers: { ...headers(false), "Content-Type": m.contentType }, body: m.body }, 120_000, 2);
   if (!r.ok) return [];
-  const j: any = await r.json().catch(() => ({}));
+  let j: any = {};
+  try {
+    j = r.json();
+  } catch {
+    return [];
+  }
   return (j?.words ?? [])
     .filter((w: any) => w && (w.type === undefined || w.type === "word") && typeof w.text === "string" && w.text.trim())
     .map((w: any) => ({ word: String(w.text).trim(), start: Number(w.start), end: Number(w.end) }))
@@ -101,7 +106,7 @@ export async function synthesizeVoiceStudio(req: TtsRequest): Promise<void> {
   if (!s.voicestudioUrl) throw new VoiceStudioError("The VoiceStudio address is not set. Run: node scripts/set-voicestudio.js <url>");
   const { lang } = voiceSlot(req.voice);
   const voiceId = voiceIdFor(req.voice, s.voices);
-  const url = `${s.voicestudioUrl}/elevenlabs/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`;
+  const path = `/elevenlabs/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`;
   const body = JSON.stringify({ text: req.text, model_id: s.voicestudioModel, language_code: lang, voice_settings: { speed: req.speed || 1 } });
   fs.rmSync(wordsFileFor(req.outFile), { force: true });
   await waitReachable();
@@ -110,20 +115,18 @@ export async function synthesizeVoiceStudio(req: TtsRequest): Promise<void> {
   let last = "";
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
-      const r = await call(url, { method: "POST", headers: headers(true), body }, 600_000);
+      const r = await httpx(`${s.voicestudioUrl}${path}`, { method: "POST", headers: headers(true), body }, 600_000);
       if (r.ok) {
-        const buf = Buffer.from(await r.arrayBuffer());
-        fs.writeFileSync(req.outFile, buf);
-        if (buf.length < 2000 || (await probe(req.outFile)).duration < 0.3) throw new VoiceStudioError("VoiceStudio returned no usable audio.");
+        fs.writeFileSync(req.outFile, r.body);
+        if (r.body.length < 2000 || (await probe(req.outFile)).duration < 0.3) throw new VoiceStudioError("VoiceStudio returned no usable audio.");
         break;
       }
-      const text = (await r.text()).slice(0, 200);
-      last = `VoiceStudio ${r.status}: ${text}`;
-      // A wrong key, an unknown voice or a bad request will not get better by asking again.
+      last = `VoiceStudio ${r.status}: ${r.text().slice(0, 300)}`;
+      // A wrong key, a licence gate, an unknown voice or a bad request will not get better by asking again.
       if (r.status === 401 || r.status === 403 || r.status === 404 || r.status === 422) throw new VoiceStudioError(last, r.status);
     } catch (e: any) {
       if (e instanceof VoiceStudioError && e.status) throw e;
-      last = e?.name === "AbortError" ? "VoiceStudio did not answer in time." : `VoiceStudio request failed: ${e?.cause?.code || e?.message || e}`;
+      last = e instanceof VoiceStudioError ? e.message : `VoiceStudio request failed: ${e?.code || e?.message || e}`;
     }
     if (attempt === 3) throw new VoiceStudioError(`${last} Is the VoiceStudio server (Colab) running, and is the address current?`);
     await sleep(5000 * (attempt + 1));
@@ -146,6 +149,46 @@ export async function synthesizeVoiceStudio(req: TtsRequest): Promise<void> {
     });
   }
   fs.writeFileSync(wordsFileFor(req.outFile), JSON.stringify(words));
+}
+
+export interface VoiceStudioHealth {
+  online: boolean;
+  detail: string;
+  device?: string;
+  engine?: string | null;
+  /** Whether the API key in backend/.env is accepted by the server (null when it could not be checked). */
+  keyOk: boolean | null;
+  voices: { id: string; name: string }[];
+}
+
+/** Is the server up, does it accept our key, and which voices does it have. Never throws. */
+export async function voiceStudioHealth(): Promise<VoiceStudioHealth> {
+  if (!base()) return { online: false, detail: "No VoiceStudio address is set.", keyOk: null, voices: [] };
+  try {
+    await waitReachable(6);
+  } catch (e: any) {
+    return { online: false, detail: String(e?.message || e), keyOk: null, voices: [] };
+  }
+  try {
+    const h: any = (await call("/health", { method: "GET" }, 10_000)).json();
+    let keyOk: boolean | null = null;
+    let voices: { id: string; name: string }[] = [];
+    const r = await call("/elevenlabs/v1/voices", { method: "GET", headers: headers(false) }, 15_000);
+    if (r.ok) {
+      keyOk = true;
+      voices = (r.json()?.voices ?? []).map((v: any) => ({ id: String(v.voice_id), name: String(v.name || v.voice_id) }));
+    } else if (r.status === 401 || r.status === 403) keyOk = false;
+    return {
+      online: true,
+      device: h?.device,
+      engine: h?.engine ?? null,
+      keyOk,
+      voices,
+      detail: keyOk === false ? "The server answers but refuses the key: VOICESTUDIO_API_KEY in backend/.env does not match the server's key." : "ready",
+    };
+  } catch (e: any) {
+    return { online: false, detail: `VoiceStudio request failed: ${e?.code || e?.message || e}`, keyOk: null, voices: [] };
+  }
 }
 
 export const voiceStudioTts: TtsProvider = {
