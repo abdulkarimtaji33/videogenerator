@@ -8,11 +8,17 @@
 # Every network step retries. It prints:  VOICESTUDIO_PUBLIC_URL=https://....trycloudflare.com   and a heartbeat every 5 minutes.
 
 set -u
-KEY="${VOICESTUDIO_KEY:-}"
-[ -n "$KEY" ] || { echo "set VOICESTUDIO_KEY first"; exit 1; }
 W=/content/vs-run; PORT=3900
 mkdir -p "$W" && cd /content || exit 1
 say() { echo "[$(date +%H:%M:%S)] $*"; }
+# No key given: make a fresh random one for this session (so nobody has to type a secret into the terminal). It is printed once here and
+# kept in /content/vs-run/key.txt; copy it into backend/.env as VOICESTUDIO_API_KEY (the app needs it to talk to this server).
+KEY="${VOICESTUDIO_KEY:-}"
+if [ -z "$KEY" ]; then
+  KEY=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')
+  echo "$KEY" > "$W/key.txt"
+  say "VOICESTUDIO_KEY_GENERATED=$KEY"
+fi
 retry() { local n="$1"; shift; local i; for i in $(seq 1 "$n"); do "$@" && return 0; say "retry $i/$n: $*"; sleep 8; done; return 1; }
 
 # Google Drive cache (only when the notebook has mounted Drive: from google.colab import drive; drive.mount('/content/drive')).
