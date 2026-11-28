@@ -1,0 +1,72 @@
+# Builds the FLUX image server (stable-diffusion.cpp sd-server) with CUDA for the free Colab/Kaggle T4 GPU and publishes it as a release file.
+# Why: compiling it on Colab's 2 CPU cores takes about 65 minutes every session; here it is built once and Colab downloads it in about a minute
+# (kaggle/flux-server.sh tries this download first and compiles only if it fails).
+# Run it by hand: Actions, "Build sd-server (CUDA, T4)", Run workflow. Nothing secret is used; the release is public (open-source MIT program).
+
+name: Build sd-server (CUDA, T4)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "stable-diffusion.cpp release tag to build"
+        default: "master-1111-6874e49"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    # The same CUDA version (13.0) that built successfully on Colab.
+    container: nvidia/cuda:13.0.3-devel-ubuntu22.04
+    timeout-minutes: 120
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      - name: Tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git build-essential curl ca-certificates python3-pip file
+          pip3 install --upgrade cmake
+          cmake --version
+
+      - name: Get the source
+        run: |
+          git clone --recurse-submodules https://github.com/leejet/stable-diffusion.cpp sd
+          cd sd
+          git checkout -q "$TAG"
+          git submodule update --init --recursive
+
+      - name: Build (T4 only, no FlashAttention kernels)
+        working-directory: sd
+        run: |
+          nvcc --version | tail -n 1
+          cmake -B build -DSD_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=75 -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA_FA=OFF
+          cmake --build build -j"$(nproc)" --target sd-server
+
+      - name: Package
+        working-directory: sd/build
+        run: |
+          test -x bin/sd-server
+          file bin/sd-server
+          ldd bin/sd-server || true   # libcuda is missing here (no GPU driver in CI) and is present on Colab
+          NAME="sd-server-${TAG}-sm75-cuda13.tgz"
+          tar -czf "../../${NAME}" $(find . -type f \( -path './bin/*' -o -name '*.so' -o -name '*.so.*' \) | sed 's#^\./##')
+          cd ../..
+          sha256sum "${NAME}" | tee "${NAME}.sha256"
+          ls -l "${NAME}"
+          echo "ASSET=${NAME}" >> "$GITHUB_ENV"
+
+      - name: Publish the release file
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: sd-server-${{ inputs.tag }}
+          name: "sd-server ${{ inputs.tag }} (CUDA 13, T4)"
+          body: |
+            Prebuilt `sd-server` from stable-diffusion.cpp `${{ inputs.tag }}` for the NVIDIA T4 GPU (CUDA 13.0, compute capability 7.5, no FlashAttention kernels).
+            Used by `kaggle/flux-server.sh` so a free Colab session does not have to compile it (about 65 minutes). Linux x86_64 only. stable-diffusion.cpp is MIT licensed.
+          files: |
+            ${{ env.ASSET }}
+            ${{ env.ASSET }}.sha256

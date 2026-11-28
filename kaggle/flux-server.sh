@@ -54,6 +54,21 @@ if [ ! -x "$BIN" ] && [ -n "$CACHE" ] && [ -s "$CACHE_TGZ" ]; then
   mkdir -p "$W/sd/build" && tar -xzf "$CACHE_TGZ" -C "$W/sd/build" 2>/dev/null
   if [ -x "$BIN" ] && ! has_missing_libs "$BIN" && "$BIN" --help >/dev/null 2>&1; then say "restored from Drive (no build needed)"; else say "the Drive copy does not run here; building instead"; rm -rf "$W/sd/build"; fi
 fi
+# Prebuilt server from GitHub (built by .github/workflows/build-sd-server.yml, CUDA 13 for the T4): a download of about a minute instead of
+# the 65 minute compile. Checked the same way as the Drive copy; if it does not run here, the compile below still happens.
+if [ ! -x "$BIN" ]; then
+  REL_URL="https://github.com/abdulkarimtaji33/videogenerator/releases/download/sd-server-$SD_TAG/sd-server-$SD_TAG-sm75-cuda13.tgz"
+  say "trying the prebuilt server from GitHub"
+  mkdir -p "$W/sd/build"
+  if curl -fsSL --retry 5 --retry-all-errors -o "$W/sd-prebuilt.tgz" "$REL_URL" && tar -xzf "$W/sd-prebuilt.tgz" -C "$W/sd/build" 2>/dev/null \
+     && [ -x "$BIN" ] && ! has_missing_libs "$BIN" && "$BIN" --help >/dev/null 2>&1; then
+    say "using the prebuilt server (no build needed)"
+    [ -n "$CACHE" ] && [ ! -s "$CACHE_TGZ" ] && cp "$W/sd-prebuilt.tgz" "$CACHE_TGZ" && say "kept a copy on Drive"
+  else
+    say "the prebuilt server is not available or does not run here; building instead"
+    rm -rf "$W/sd/build"
+  fi
+fi
 [ -n "$CACHE" ] || say "Drive is not mounted: the build will not be saved (mount it first to avoid the 65 minute build next time)"
 if [ ! -x "$BIN" ]; then
   say "building stable-diffusion.cpp $SD_TAG with CUDA (first run only)"
