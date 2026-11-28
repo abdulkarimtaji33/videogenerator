@@ -5,7 +5,7 @@ import { Badge, Button, Card, ErrorNote, Field, Page, inputCls, useLoad } from "
 
 export default function ChannelsPage() {
   const { data, error, reload } = useLoad<any[]>(() => api("GET", "/api/channels"));
-  const [f, setF] = useState({ name: "", language: "en", niche: "", publishMode: "review", slots: "09:00, 18:00", timezone: "UTC", banned: "" });
+  const [f, setF] = useState({ name: "", language: "hi", niche: "", publishMode: "review", slots: "09:00, 18:00", timezone: "UTC", banned: "" });
   const [msg, setMsg] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -59,7 +59,7 @@ export default function ChannelsPage() {
           <Field label="Niche"><input className={inputCls} value={f.niche} onChange={(e) => setF({ ...f, niche: e.target.value })} placeholder="space_science_curiosity" /></Field>
           <Field label="Language">
             <select className={inputCls} value={f.language} onChange={(e) => setF({ ...f, language: e.target.value })}>
-              <option value="en">English</option><option value="ur">Urdu</option><option value="hi">Hindi</option>
+              <option value="hi">Hindi</option><option value="en">English</option>
             </select>
           </Field>
           <Field label="Publishing">

@@ -1,7 +1,8 @@
 // VoiceStudio (open-source, local-first voice studio, AGPL-3.0; engine OmniVoice) as the speech engine. It runs as a server on a GPU
 // machine (the Colab T4, reached through a tunnel) and is called through its ElevenLabs-compatible API:
 //   POST {url}/elevenlabs/v1/text-to-speech/{voice_id}?output_format=mp3_44100_128   body {text, model_id, language_code, voice_settings:{speed}}
-//   POST {url}/elevenlabs/v1/speech-to-text   (multipart: file, model_id)          -> words with start/end
+//   POST {url}/v1/audio/transcriptions   (multipart: file, response_format=verbose_json, timestamp_granularities[]=word; Bearer key)
+//                                                                                  -> one segment per word with start/end (needs an ASR model installed)
 // The key is sent as xi-api-key and is read from VOICESTUDIO_API_KEY in backend/.env only.
 //
 // All calls go through net/httpx.ts (not fetch): it connects over an address that answers, which a tunnel name needs on this PC.
@@ -86,8 +87,11 @@ export async function speechSpan(file: string): Promise<{ start: number; end: nu
 
 /** Timings VoiceStudio's own transcription gives for the words of the speech (empty when it cannot). */
 async function transcribeWords(file: string, lang: string): Promise<{ word: string; start: number; end: number }[]> {
-  const m = multipart({ model_id: "scribe_v1", language_code: lang }, { name: "file", filename: "speech.mp3", type: "audio/mpeg", data: fs.readFileSync(file) });
-  const r = await call("/elevenlabs/v1/speech-to-text", { method: "POST", headers: { ...headers(false), "Content-Type": m.contentType }, body: m.body }, 120_000, 2);
+  // The OpenAI-style route gives a start and end per word (measured: Whisper large-v3 Turbo, one segment per word). The
+  // ElevenLabs-style speech-to-text route returned the text but an empty word list, so it is not used. This route takes the key as a Bearer token.
+  const m = multipart({ model: "whisper-1", language: lang, response_format: "verbose_json", "timestamp_granularities[]": "word" }, { name: "file", filename: "speech.mp3", type: "audio/mpeg", data: fs.readFileSync(file) });
+  const h: Record<string, string> = { "Content-Type": m.contentType, ...(process.env.VOICESTUDIO_API_KEY ? { Authorization: `Bearer ${process.env.VOICESTUDIO_API_KEY}` } : {}) };
+  const r = await call("/v1/audio/transcriptions", { method: "POST", headers: h, body: m.body }, 120_000, 2);
   if (!r.ok) return [];
   let j: any = {};
   try {
@@ -95,10 +99,10 @@ async function transcribeWords(file: string, lang: string): Promise<{ word: stri
   } catch {
     return [];
   }
-  return (j?.words ?? [])
-    .filter((w: any) => w && (w.type === undefined || w.type === "word") && typeof w.text === "string" && w.text.trim())
-    .map((w: any) => ({ word: String(w.text).trim(), start: Number(w.start), end: Number(w.end) }))
-    .filter((w: any) => Number.isFinite(w.start) && Number.isFinite(w.end));
+  const items: any[] = Array.isArray(j?.words) && j.words.length ? j.words : (j?.segments ?? []);
+  return items
+    .map((w: any) => ({ word: String(w?.word ?? w?.text ?? "").trim(), start: Number(w?.start), end: Number(w?.end) }))
+    .filter((w) => w.word && Number.isFinite(w.start) && Number.isFinite(w.end));
 }
 
 export async function synthesizeVoiceStudio(req: TtsRequest): Promise<void> {

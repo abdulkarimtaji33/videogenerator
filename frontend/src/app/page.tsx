@@ -73,7 +73,7 @@ export default function HomePage() {
   const [images, setImages] = useState<ImageSystemStatus | null>(null);
   const [imageProvider, setImageProvider] = useState("default");
   const [imageFallback, setImageFallback] = useState(false);
-  const [language, setLanguage] = useState<"en" | "ur" | "hi">("en");
+  const [language, setLanguage] = useState<"en" | "ur" | "hi">("hi");
 
   useEffect(() => {
     setRecentProjects(getRecentProjects());
@@ -213,11 +213,10 @@ export default function HomePage() {
               onChange={(e) => setLanguage(e.target.value as "en" | "ur" | "hi")}
               className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm text-foreground focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
             >
-              <option value="en">English</option>
-              <option value="ur">Urdu (اردو), Roman captions</option>
               <option value="hi">Hindi (हिन्दी), Roman captions</option>
+              <option value="en">English</option>
             </select>
-            {language !== "en" && <p className="mt-1.5 text-xs text-muted-foreground">Natural Microsoft neural voices. Characters get their own voices; captions are Roman letters.</p>}
+            {language !== "en" && <p className="mt-1.5 text-xs text-muted-foreground">Characters get their own voices; captions are Roman letters.</p>}
           </div>
 
           <div>

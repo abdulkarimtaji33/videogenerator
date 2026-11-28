@@ -7,10 +7,10 @@ import path from "path";
 import { synthesizeVoiceStudio } from "../src/providers/voicestudio";
 import { probe } from "../src/shorts/ffmpeg";
 
+// Hindi only (the owner chose Hindi over Urdu). Edge voice ids are only used to pick the slot: Madhur = narrator, Swara = female-0.
 const lines: { name: string; voice: string; text: string }[] = [
-  { name: "narrator-urdu", voice: "ur-PK-AsadNeural", text: "السلام علیکم! آج میں آپ کو ایک ایسی کہانی سناتا ہوں جو آپ کو حیران کر دے گی۔ بس آخر تک دیکھتے رہیے گا۔" },
-  { name: "female-urdu", voice: "ur-PK-UzmaNeural", text: "کیا تم نے کبھی سوچا ہے کہ پرانی لائبریری کے دروازے کے پیچھے کیا چھپا ہے؟ چلو، آج ہم مل کر پتا لگاتے ہیں۔" },
   { name: "narrator-hindi", voice: "hi-IN-MadhurNeural", text: "नमस्ते दोस्तों! आज मैं आपको एक ऐसी कहानी सुनाता हूँ जो आपको हैरान कर देगी। बस आख़िर तक देखते रहिएगा।" },
+  { name: "female-hindi", voice: "hi-IN-SwaraNeural", text: "क्या तुमने कभी सोचा है कि पुरानी लाइब्रेरी के दरवाज़े के पीछे क्या छिपा है? चलो, आज हम मिलकर पता लगाते हैं।" },
 ];
 
 async function main() {
