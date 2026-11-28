@@ -70,6 +70,30 @@ A fresh server has no model, and the first speech request is refused with `403 m
 3. Install it: `POST /models/install` with `{"repo_id":"k2-fsa/OmniVoice"}`, then watch `GET /models/install/status`. 3.27 GB at about 40 MB/s took about 1.5 minutes. Do not treat the word `bytes_done` as "done": wait until the job disappears from the list.
 4. Make a sample: `npx tsx scripts/voice-sample.ts` (from `backend/`). It writes mp3 files to `backend/storage/voice-test/`.
 
+### Step 4: word timings for captions (speech-recognition model)
+Captions need the start and end time of every spoken word. VoiceStudio gets them by listening to the finished speech with a speech-recognition (ASR) model, and it **only estimates** them when no ASR model is installed (the files then show just 2 timing marks). A fresh server has none installed.
+- Install Whisper large-v3 Turbo (`deepdml/faster-whisper-large-v3-turbo-ct2`, 1.6 GB, 99 languages including Urdu and Hindi, MIT licence, no acceptance needed): `POST /models/install` with `{"repo_id":"deepdml/faster-whisper-large-v3-turbo-ct2"}`. The download took about 40 seconds at 25 to 45 MB/s, after which the server needs a short time to finish. Wait until `GET /models/install/status` returns `{"jobs":[]}`.
+- The app asks for word timings through `POST /elevenlabs/v1/speech-to-text` (see `src/providers/voicestudio.ts`). The server also has `POST /elevenlabs/v1/text-to-speech/{voice}/with-timestamps`, which returns speech and timings together when an ASR model is present (`X-OmniVoice-Alignment: recognized`; otherwise `estimated`).
+- Check it worked: after a sample, the `.words.json` file next to the mp3 should have one entry per spoken word, not 2.
+
+### Step 5: distinct voices per role
+Without this every request uses the server's single default voice, so the male and female narrators sound alike. A voice is a "profile" built from a text description:
+1. `POST /design/describe` with `{"description":"young adult male, moderate pitch, energetic"}` returns design settings (`attrs`) and an `instruct` string. It understands gender, age, pitch, style and accent words; other words (such as "warm" or "gruff") come back as `unmatched` and are ignored.
+2. `POST /profiles` (multipart form) with `name`, `kind=design`, `vd_states=<the attrs JSON>`, `instruct`, `seed`, `language=Auto` creates the profile and returns its `id`. The seed fixes the voice, so the same seed gives the same voice.
+3. Tell the app: `node scripts/set-voicestudio.js <address> --voice narrator=<id> --voice male-0=<id> --voice male-1=<id> --voice female-0=<id> --voice female-1=<id>`. The slots are `narrator`, `male-N` and `female-N`; a slot with no voice falls back to its role, then to the default.
+
+Voices made on 2026-11-28 (descriptions and seeds; the ids belong to that one server session and are not reusable):
+
+| Slot | Description | Seed |
+|---|---|---|
+| narrator | deep calm adult male, low pitch | 101 |
+| male-0 | young adult male, moderate pitch | 202 |
+| male-1 | middle-aged male, low pitch | 303 |
+| female-0 | young adult female, high pitch | 404 |
+| female-1 | middle-aged female, moderate pitch | 505 |
+
+**Profiles live on the Colab disk and vanish when the session ends**, so each fresh server needs this step again (about 5 calls). Because the seed fixes the voice, recreating them with the same descriptions and seeds should give the same voices, but that has not been tested.
+
 Note: the commercial-use warning is real. If a channel using these voices is monetized, check the licence terms first, or switch to an Apache-2.0 model (VoxCPM2, which has Hindi but no Urdu).
 
 ## What each file does
@@ -111,5 +135,6 @@ The Drive had only 2.9 GB free, so VoiceStudio is **not** cached: each fresh ses
 
 ## Status when this was written (2026-11-28)
 - FLUX build on Colab was still compiling (not finished), so no new FLUX address existed yet.
-- VoiceStudio server was running, the OmniVoice model was installed (3.27 GB, 13 files) and the licence accepted. The first Urdu sample (`narrator-urdu.mp3`) was made; its word-timing file was tiny, which means VoiceStudio's own word timings were not used and the fallback timing was applied. The other samples (Urdu female, Hindi narrator) had not finished.
+- VoiceStudio server was running, the OmniVoice model was installed (3.27 GB, 13 files) and its licence accepted. The first three samples were made with the single default voice (Urdu male narrator, Urdu female, Hindi narrator; about 250 s for each of the first two, 13.8 s for the Hindi one): each had only 2 word timings, because no ASR model was installed yet.
+- Then: Whisper large-v3 Turbo downloaded (7 of 7 files) and five voices were created and saved in the app (`storage/voice-settings.json`). The samples were being regenerated with them. **Not yet verified:** that the timings now have one entry per word, and how the five voices sound (nobody has listened to them yet).
 - Veoframe video generation stays off (`VEOFRAME_ENABLED=false`) and project 14 stays paused until the owner says otherwise.
