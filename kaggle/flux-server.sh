@@ -42,6 +42,19 @@ say "GPU:"; nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>&1 
 
 # ---- 1. build sd-server with CUDA ----
 BIN="$W/sd/build/bin/sd-server"
+# Google Drive cache (Colab only, when the notebook has mounted Drive first: from google.colab import drive; drive.mount('/content/drive')).
+# The build takes about 65 minutes on Colab's 2 cores, but a Colab session is wiped when it ends, so the built server is kept on Drive
+# and restored in seconds next time. Only the server program and its libraries (about 100 MB) are stored, no models and no secrets.
+CACHE=""
+[ -d /content/drive/MyDrive ] && CACHE="/content/drive/MyDrive/shotcraft-flux-cache" && mkdir -p "$CACHE"
+CACHE_TGZ="$CACHE/sd-server-$SD_TAG-sm75.tgz"
+has_missing_libs() { ldd "$1" 2>/dev/null | grep -q "not found"; }
+if [ ! -x "$BIN" ] && [ -n "$CACHE" ] && [ -s "$CACHE_TGZ" ]; then
+  say "restoring the built server from Drive"
+  mkdir -p "$W/sd/build" && tar -xzf "$CACHE_TGZ" -C "$W/sd/build" 2>/dev/null
+  if [ -x "$BIN" ] && ! has_missing_libs "$BIN" && "$BIN" --help >/dev/null 2>&1; then say "restored from Drive (no build needed)"; else say "the Drive copy does not run here; building instead"; rm -rf "$W/sd/build"; fi
+fi
+[ -n "$CACHE" ] || say "Drive is not mounted: the build will not be saved (mount it first to avoid the 65 minute build next time)"
 if [ ! -x "$BIN" ]; then
   say "building stable-diffusion.cpp $SD_TAG with CUDA (first run only)"
   command -v nvcc >/dev/null 2>&1 || export PATH=/usr/local/cuda/bin:$PATH
@@ -54,6 +67,11 @@ if [ ! -x "$BIN" ]; then
   cmake --build build -j"$(nproc)" --target sd-server > "$W/build.log" 2>&1 || { tail -n 30 "$W/build.log"; say "build failed"; exit 1; }
   cd "$W"
   [ -x "$BIN" ] || BIN=$(find "$W/sd/build" -name sd-server -type f | head -n 1)
+  if [ -n "$CACHE" ] && [ -x "$W/sd/build/bin/sd-server" ]; then
+    say "saving the built server to Drive"
+    (cd "$W/sd/build" && tar -czf "$CACHE_TGZ.part" $(find . -type f \( -path './bin/*' -o -name '*.so' -o -name '*.so.*' \) | sed 's#^\./##')) \
+      && mv -f "$CACHE_TGZ.part" "$CACHE_TGZ" && say "saved: $(du -h "$CACHE_TGZ" | cut -f1) in $CACHE" || say "could not save to Drive (the server still runs)"
+  fi
 fi
 [ -x "$BIN" ] || { say "sd-server was not built"; exit 1; }
 say "sd-server ready: $BIN"
